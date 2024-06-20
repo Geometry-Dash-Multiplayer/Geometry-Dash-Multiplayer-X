@@ -1,0 +1,9 @@
+{
+	"geode": "3.0.0-beta.2",
+	"gd": "*",
+	"version": "v0.0.0",
+	"id": "angel.gdmx",
+	"name": "GDMX",
+	"developer": "Angel",
+	"description": "A mod that makes it possible to connect and play with other people in real time."
+}

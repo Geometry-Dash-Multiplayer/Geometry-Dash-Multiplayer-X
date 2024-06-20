@@ -1,2 +1,4 @@
-# Geometry-Dash-Multiplayer-X
-The official repository for the Geometry Dash Multiplayer X mod, a mod which makes it possible for anyone to connect and play with other people in real time.
+# GDMX
+<img src="logo.png" width="150" alt="the mod's logo" />
+
+A mod that makes it possible to connect and play with other people in real time.
