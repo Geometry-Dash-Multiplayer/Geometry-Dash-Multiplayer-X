@@ -1,8 +1,6 @@
 #include <Geode/Geode.hpp>
-
-using namespace geode::prelude;
-
 #include <Geode/modify/MenuLayer.hpp>
+using namespace geode::prelude;
 
 class $modify(EntryPoint, MenuLayer)
 {
@@ -11,9 +9,9 @@ class $modify(EntryPoint, MenuLayer)
     if (!MenuLayer::init())
       return false;
 
-    auto myButton = CCMenuItemSpriteExtra::create(
-        CCSprite::createWithSpriteFrameName("GJ_likeBtn_001.png"), this,
-        menu_selector(EntryPoint::onMyButton));
+    auto myButton =
+        CCMenuItemSpriteExtra::create(CCSprite::create("logo.png"_spr), this,
+                                      menu_selector(EntryPoint::onMyButton));
 
     auto menu = this->getChildByID("bottom-menu");
     menu->addChild(myButton);
@@ -27,6 +25,6 @@ class $modify(EntryPoint, MenuLayer)
 
   void onMyButton(CCObject*)
   {
-    FLAlertLayer::create("Geode", "Hello World!", "OK")->show();
+    FLAlertLayer::create("Angel", "Hello World!", "OK")->show();
   }
 };
