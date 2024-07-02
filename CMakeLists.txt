@@ -4,11 +4,11 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
 project(GDMX VERSION 1.0.0)
 
-foreach (HEADER "macros")
+foreach (HEADER "macros" "settings_popup" "lobby_cell" "lobby_info" "gdmx_manager")
     list(APPEND GDMX_HEADERS "headers/${HEADER}.h")
 endforeach()
 
-foreach (SRC "main")
+foreach (SRC "main" "settings_popup" "lobby_cell" "gdmx_manager")
     list(APPEND GDMX_SOURCES "src/${SRC}.cpp")
 endforeach()
 
