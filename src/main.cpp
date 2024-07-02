@@ -9,7 +9,10 @@ class $modify(GDMXEntry, LevelInfoLayer)
   {
     if (!LevelInfoLayer::init(level, challenge))
       return false;
-    auto sprite = CircleButtonSprite::createWithSprite("logo.png"_spr);
+    auto scale_factor = CCDirector::get()->getContentScaleFactor();
+    auto sprite = CircleButtonSprite::create(CCSprite::create("logo.png"_spr));
+    if (scale_factor < 4)
+      sprite->setTopRelativeScale(scale_factor * 0.3f);
     auto button = CCMenuItemSpriteExtra::create(
         sprite, this, menu_selector(GDMXEntry::onGDMXSettings));
     auto* menu = m_likeBtn->getParent();
@@ -21,6 +24,7 @@ class $modify(GDMXEntry, LevelInfoLayer)
   }
 
   void onGDMXSettings(CCObject*) { LobbiesPopup::create()->show(); }
+
   CCPoint findGDMXPosition()
   {
     if (m_cloneBtn)
