@@ -1,7 +1,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelInfoLayer.hpp>
 #include "settings_popup.h"
-#include "../include/easywsclient.hpp"
+#include <websocket/easywsclient.hpp>
 
 using namespace geode::prelude;
 

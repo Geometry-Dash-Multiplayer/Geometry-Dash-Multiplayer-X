@@ -12,15 +12,19 @@ foreach (SRC "main" "settings_popup" "lobby_cell" "gdmx_manager")
     list(APPEND GDMX_SOURCES "src/${SRC}.cpp")
 endforeach()
 
+file(GLOB_RECURSE WEBSOCKET_LIB "include/websocket/*")
+
 add_library(
     GDMX SHARED 
     ${GDMX_SOURCES}
     ${GDMX_HEADERS}
+    ${WEBSOCKET_LIB}
 )
 
 target_include_directories(
     GDMX PRIVATE
     "${PROJECT_SOURCE_DIR}/headers"
+    "${PROJECT_SOURCE_DIR}/include"
 )
 
 source_group("Source Files\\General" FILES ${GDMX_SOURCES})
