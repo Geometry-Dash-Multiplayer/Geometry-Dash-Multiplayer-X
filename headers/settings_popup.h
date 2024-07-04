@@ -1,3 +1,4 @@
+#pragma once
 #include <Geode/ui/Popup.hpp>
 #include <Geode/cocos/include/cocos2d.h>
 #include <string_view>

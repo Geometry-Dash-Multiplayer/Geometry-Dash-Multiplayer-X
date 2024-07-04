@@ -6,6 +6,10 @@ GDMXManager& GDMXManager::get()
   return instance;
 }
 
-void GDMXManager::join(size_t id) {}
+void GDMXManager::join(const std::shared_ptr<LobbyInfo>& lobby)
+{
+  joinedLobbyInfo = lobby;
+  // do other stuff, such as fetching joined players info
+}
 
-void GDMXManager::unjoin(size_t id) {}
+void GDMXManager::unjoin() { joinedLobbyInfo = nullptr; }

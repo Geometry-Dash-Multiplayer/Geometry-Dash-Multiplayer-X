@@ -75,7 +75,9 @@ bool LobbiesPopup::setup()
   for (const char* name : { "Global", "Angel", "Alizer" })
   {
     lobbies_list->m_contentLayer->addChild(
-        LobbyCell::create(name, bg2_layer->getContentWidth(),
+        LobbyCell::create(std::make_shared<LobbyInfo>(
+                              0, name, 0, CCSprite::create("earth.png"_spr)),
+                          bg2_layer->getContentWidth(),
                           bg2_layer->getContentHeight() / 5, colored));
     lobbies_list->m_contentLayer->addChild(CCLayerColor::create(
         { 0, 0, 0, 150 }, bg2_layer->getContentWidth(), 2.2f));

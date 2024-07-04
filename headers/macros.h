@@ -1,3 +1,4 @@
+#pragma once
 #include <cassert>
 
 #ifndef __INTELLISENSE__

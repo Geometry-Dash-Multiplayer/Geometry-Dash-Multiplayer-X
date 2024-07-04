@@ -1,11 +1,12 @@
 #include "lobby_cell.h"
+#include "gdmx_manager.h"
 #include <Geode/Geode.hpp>
 using namespace geode::prelude;
 
-LobbyCell* LobbyCell::create(const std::string& name, float width, float height,
-                             bool colored)
+LobbyCell* LobbyCell::create(const std::shared_ptr<LobbyInfo>& lobby,
+                             float width, float height, bool colored)
 {
-  auto obj = new LobbyCell(name);
+  auto obj = new LobbyCell(lobby, colored);
   if (obj->init(width, height, colored))
   {
     obj->autorelease();
@@ -18,14 +19,16 @@ LobbyCell* LobbyCell::create(const std::string& name, float width, float height,
 
 bool LobbyCell::init(float width, float height, bool colored)
 {
+  if (!CCLayer::init())
+    return false;
   setContentSize({ width, height });
   setAnchorPoint({});
 
   if (colored)
   {
-    auto clayer = CCLayerColor::create({ 0, 0, 0, 75 }, width, height);
-    clayer->setAnchorPoint({});
-    addChild(clayer);
+    coloredLayer = CCLayerColor::create({ 0, 0, 0, 75 }, width, height);
+    coloredLayer->setAnchorPoint({});
+    addChild(coloredLayer);
   }
 
   auto cell_items = CCNode::create();
@@ -37,12 +40,11 @@ bool LobbyCell::init(float width, float height, bool colored)
   cell_items->setID("cell-items");
   addChild(cell_items);
 
-  auto icon = CCSprite::create("earth.png"_spr);
-  icon->setLayoutOptions(
+  lobby->icon->setLayoutOptions(
       AxisLayoutOptions::create()->setScaleLimits(0.1f, 0.1f));
-  cell_items->addChild(icon);
+  cell_items->addChild(lobby->icon);
 
-  auto lobby_text = CCLabelBMFont::create(lobbyName.c_str(), "bigFont.fnt");
+  auto lobby_text = CCLabelBMFont::create(lobby->name.c_str(), "bigFont.fnt");
   lobby_text->setScale(0.5f);
   lobby_text->setLayoutOptions(
       AxisLayoutOptions::create()->setAutoScale(true)->setScaleLimits(0.35f,
@@ -88,20 +90,65 @@ bool LobbyCell::init(float width, float height, bool colored)
   lock_menu->addChild(lock_button);
   cell_items->addChild(lock_menu);
 
-  auto join_button = CCMenuItemSpriteExtra::create(
-      ButtonSprite::create("Join"), this, menu_selector(LobbyCell::onJoin));
-  join_button->setScale(join_button->m_baseScale = 0.6f);
-  join_button->setPosition(
-      { width - (width / 32) - (join_button->getScaledContentWidth() / 2),
+  joinButton = CCMenuItemSpriteExtra::create(ButtonSprite::create("Join"), this,
+                                             menu_selector(LobbyCell::onJoin));
+  joinButton->setTag(true);
+  joinButton->setScale(joinButton->m_baseScale = 0.6f);
+  joinButton->setPosition(
+      { width - (width / 32) - (joinButton->getScaledContentWidth() / 2),
         height / 2 });
   auto join_menu = CCMenu::create();
   join_menu->ignoreAnchorPointForPosition(false);
   join_menu->setID("join-menu");
-  join_menu->addChild(join_button);
+  join_menu->addChild(joinButton);
   addChild(join_menu);
 
   cell_items->updateLayout();
   return true;
+}
+
+void LobbyCell::unjoinFromOther(const LobbyInfo* otherLobby)
+{
+  if (!otherLobby || otherLobby == lobby.get())
+    return;
+  auto cells  = getParent()->getChildren()->data;
+  auto result = std::find_if(cells->arr, cells->arr + cells->num,
+                             [otherLobby](CCObject* item)
+                             {
+                               if (auto cell = dynamic_cast<LobbyCell*>(item))
+                                 return cell->lobby.get() == otherLobby;
+                               return false;
+                             });
+  if (result != (cells->arr + cells->num))
+    static_cast<LobbyCell*>(*result)->unjoin();
+}
+
+void LobbyCell::join()
+{
+  static_cast<ButtonSprite*>(joinButton->getNormalImage())->setString("Unjoin");
+  if (coloredLayer)
+    coloredLayer->setColor({ 0, 0xFF, 0 });
+  else
+  {
+    coloredLayer = CCLayerColor::create({ 0, 0xFF, 0, 75 }, getContentWidth(),
+                                        getContentHeight());
+    addChild(coloredLayer, -1);
+  }
+
+  unjoinFromOther(GDMXManager::get().joinedLobby());
+  GDMXManager::get().join(lobby);
+  joinButton->setTag(false);
+}
+
+void LobbyCell::unjoin()
+{
+  static_cast<ButtonSprite*>(joinButton->getNormalImage())->setString("Join");
+  if (colored)
+    coloredLayer->setColor({});
+  else
+    removeChild(std::exchange(coloredLayer, nullptr));
+  GDMXManager::get().unjoin();
+  joinButton->setTag(true);
 }
 
 void LobbyCell::onInfo(CCObject*)
@@ -114,7 +161,9 @@ void LobbyCell::onLock(CCObject*)
   FLAlertLayer::create("Access", "Lobby Accessible", "OK")->show();
 }
 
-void LobbyCell::onJoin(CCObject* button)
+void LobbyCell::onJoin(CCObject*)
 {
-  FLAlertLayer::create("Join", "Joining Lobby", "OK")->show();
+  if (joinButton->getTag())
+    return join();
+  unjoin();
 }

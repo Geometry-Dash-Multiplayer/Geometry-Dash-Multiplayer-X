@@ -1,5 +1,4 @@
-#include <shared_mutex>
-#include <memory>
+#pragma once
 #include "lobby_info.h"
 
 class GDMXManager
@@ -7,12 +6,13 @@ class GDMXManager
 public:
   static GDMXManager& get();
 
-  void join(size_t id);
-  void unjoin(size_t id);
+  LobbyInfo* joinedLobby() { return joinedLobbyInfo.get(); }
+
+  void join(const std::shared_ptr<LobbyInfo>& lobby);
+  void unjoin();
 
 private:
-  mutable std::shared_mutex managerLock;
-  std::shared_ptr<LobbyInfo> joinedLobby;
+  std::shared_ptr<LobbyInfo> joinedLobbyInfo;
 
   GDMXManager() {}
 
