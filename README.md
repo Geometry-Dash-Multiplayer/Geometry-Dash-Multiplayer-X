@@ -10,10 +10,6 @@ Geometry Dash Multiplayer X (GDMx) is an advanced platform that allows players t
 
 - **Peer-to-Peer Connectivity:** Play with your friends seamlessly with our optimized peer-to-peer connection.
 - **Animated Icons:** Customize your gameplay experience with a variety of animated icons.
-- **Subscription Tiers:** Choose from Tropo, Meso, and Exo tiers to unlock exclusive features and show off your status.
-  - **Tropo ($5/month):** Unlock P2P connections, animated icons, and more.
-  - **Meso ($10/month):** Gain access to the VIP room and additional features.
-  - **Exo ($20/month):** For those who want to show off and be a baller, with all the premium features included.
 - **VIP Room:** A special area for Meso and Exo subscribers to connect and share exclusive content.
 
 ## Our Vision
