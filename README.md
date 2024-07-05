@@ -12,10 +12,6 @@ Geometry Dash Multiplayer X (GDMx) is an advanced platform that allows players t
 - **Animated Icons:** Customize your gameplay experience with a variety of animated icons.
 - **VIP Room:** A special area for Meso and Exo subscribers to connect and share exclusive content.
 
-## Our Vision
-
-We aim to create a vibrant and dynamic community where Geometry Dash enthusiasts can come together, compete, and collaborate. GDMx is not just about playing the game; it's about building lasting friendships and enjoying a shared passion.
-
 ## Get Started
 
 To get started with GDMx:
