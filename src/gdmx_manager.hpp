@@ -1,8 +1,8 @@
 #pragma once
 #include <vector>
 #include <Geode/utils/cocos.hpp>
-#include "player.h"
-#include "lobby_info.h"
+#include "player.hpp"
+#include "lobby_info.hpp"
 
 class GDMXManager
 {

@@ -1,7 +1,7 @@
 #pragma once
 #include <Geode/cocos/include/cocos2d.h>
 #include <memory>
-#include "lobby_info.h"
+#include "lobby_info.hpp"
 
 class LobbyCell : public cocos2d::CCLayer
 {

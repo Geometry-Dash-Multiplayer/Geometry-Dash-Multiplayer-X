@@ -1,5 +1,5 @@
-#include "lobbies_popup.h"
-#include "lobby_cell.h"
+#include "lobbies_popup.hpp"
+#include "lobby_cell.hpp"
 #include <Geode/Geode.hpp>
 using namespace geode::prelude;
 

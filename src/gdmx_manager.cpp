@@ -1,4 +1,4 @@
-#include "gdmx_manager.h"
+#include "gdmx_manager.hpp"
 
 GDMXManager& GDMXManager::get()
 {

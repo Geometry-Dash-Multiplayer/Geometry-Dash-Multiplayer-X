@@ -1,5 +1,5 @@
-#include "lobby_cell.h"
-#include "gdmx_manager.h"
+#include "lobby_cell.hpp"
+#include "gdmx_manager.hpp"
 #include <Geode/Geode.hpp>
 using namespace geode::prelude;
 

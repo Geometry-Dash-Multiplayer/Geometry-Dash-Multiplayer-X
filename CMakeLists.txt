@@ -17,8 +17,8 @@ set(
 )
 
 foreach (PROJECT_FILE IN LISTS GDMX_PROJECT_FILES)
-    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/headers/${PROJECT_FILE}.h")
-        list(APPEND GDMX_HEADERS "headers/${PROJECT_FILE}.h")
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/${PROJECT_FILE}.hpp")
+        list(APPEND GDMX_HEADERS "src/${PROJECT_FILE}.hpp")
     endif()
     if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/${PROJECT_FILE}.cpp")
         list(APPEND GDMX_SOURCES "src/${PROJECT_FILE}.cpp")
@@ -31,13 +31,8 @@ add_library(
     ${GDMX_HEADERS}
 )
 
-target_include_directories(
-    GDMX PRIVATE
-    "${PROJECT_SOURCE_DIR}/headers"
-)
-
-source_group("Source Files\\General" FILES ${GDMX_SOURCES})
-source_group("Header Files\\General" FILES ${GDMX_HEADERS})
+source_group("Source Files\\Main" FILES ${GDMX_SOURCES})
+source_group("Header Files\\Main" FILES ${GDMX_HEADERS})
 
 if (NOT DEFINED ENV{GEODE_SDK})
     message(FATAL_ERROR "Unable to find Geode SDK! Please define GEODE_SDK environment variable to point to Geode")

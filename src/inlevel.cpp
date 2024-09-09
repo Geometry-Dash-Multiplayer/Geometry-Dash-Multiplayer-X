@@ -1,4 +1,4 @@
-#include "gdmx_manager.h"
+#include "gdmx_manager.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>

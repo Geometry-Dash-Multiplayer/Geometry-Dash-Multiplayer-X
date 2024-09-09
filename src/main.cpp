@@ -1,6 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelInfoLayer.hpp>
-#include "lobbies_popup.h"
+#include "lobbies_popup.hpp"
 using namespace geode::prelude;
 
 class $modify(GDMXEntry, LevelInfoLayer)
