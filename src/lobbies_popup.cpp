@@ -1,4 +1,4 @@
-#include "settings_popup.h"
+#include "lobbies_popup.h"
 #include "lobby_cell.h"
 #include <Geode/Geode.hpp>
 using namespace geode::prelude;

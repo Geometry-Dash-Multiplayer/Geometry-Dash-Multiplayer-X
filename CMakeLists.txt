@@ -4,12 +4,25 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
 project(GDMX VERSION 1.0.0)
 
-foreach (HEADER "macros" "settings_popup" "lobby_cell" "lobby_info" "gdmx_manager")
-    list(APPEND GDMX_HEADERS "headers/${HEADER}.h")
-endforeach()
+set(
+    GDMX_PROJECT_FILES
+    "macros"
+    "lobbies_popup"
+    "lobby_cell"
+    "lobby_info"
+    "gdmx_manager"
+    "player"
+    "main"
+    "inlevel"
+)
 
-foreach (SRC "main" "settings_popup" "lobby_cell" "gdmx_manager")
-    list(APPEND GDMX_SOURCES "src/${SRC}.cpp")
+foreach (PROJECT_FILE IN LISTS GDMX_PROJECT_FILES)
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/headers/${PROJECT_FILE}.h")
+        list(APPEND GDMX_HEADERS "headers/${PROJECT_FILE}.h")
+    endif()
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/${PROJECT_FILE}.cpp")
+        list(APPEND GDMX_SOURCES "src/${PROJECT_FILE}.cpp")
+    endif()
 endforeach()
 
 add_library(
