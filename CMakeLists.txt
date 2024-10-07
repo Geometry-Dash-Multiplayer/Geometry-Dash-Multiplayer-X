@@ -8,25 +8,39 @@ project(GDMX VERSION 1.0.0)
 set(
     GDMX_CORE_PROJECT_FILES
     "gdmx_manager"
-    "lobby_info"
-    "player"
 )
 
 set(
     GDMX_HOOKS_PROJECT_FILES
     "game_layer"
     "levelinfo"
+    "player_object"
+    "effect_manager"
+)
+
+set(
+    GDMX_MODELS_PROJECT_FILES
+    "player"
+    "lobby"
+)
+
+set(
+    GDMX_NET_PROJECT_FILES
+    "requests"
+    "tasks"
 )
 
 set(
     GDMX_UI_PROJECT_FILES
     "lobbies_popup"
     "lobby_cell"
+    "create_lobby_popup"
+    "options_menu"
 )
 
 set(GDMX_DETAIL_PROJECT_FILES "macros")
 
-foreach (DIR "core" "hooks" "ui" "detail")
+foreach (DIR "core" "hooks" "models" "net" "ui" "detail")
     string(TOUPPER ${DIR} DIR_UPPER)
     set(PROJECT_FILES_VAR "GDMX_${DIR_UPPER}_PROJECT_FILES")
     foreach (SRC IN LISTS ${PROJECT_FILES_VAR})
@@ -58,7 +72,7 @@ add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 setup_geode_mod(${PROJECT_NAME})
 
 message(STATUS "Setting up boost")
-set(BOOST_INCLUDE_LIBRARIES asio)
+set(BOOST_INCLUDE_LIBRARIES asio serialization iostreams unordered)
 CPMAddPackage(
     NAME Boost
     URL https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-cmake.7z
@@ -66,9 +80,35 @@ CPMAddPackage(
 	DOWNLOAD_EXTRACT_TIMESTAMP ON
 )
 
+CPMAddPackage(
+    NAME NetIF
+    GIT_REPOSITORY https://github.com/GMLC-TDC/netif
+    GIT_TAG eb68f3e
+)
+
+set_target_properties(
+    boost_serialization 
+    boost_wserialization
+    boost_iostreams
+PROPERTIES
+    FOLDER "Dependencies"
+)
+
+foreach (boost_lib "thread" "serialization")
+    target_compile_definitions(
+        "boost_${boost_lib}"
+    PRIVATE
+        _HAS_ITERATOR_DEBUGGING=0
+    )
+endforeach()
+
 target_link_libraries(
     GDMX
     Boost::asio
+    Boost::serialization
+    Boost::iostreams
+    Boost::unordered
+    NetIF::NetIF
 )
 
 target_include_directories(
@@ -76,6 +116,8 @@ target_include_directories(
 PRIVATE
     src/core
     src/hooks
+    src/models
+    src/net
     src/ui
     src/detail
 )
@@ -86,7 +128,14 @@ PRIVATE
     $<$<BOOL:${WIN32}>:_WIN32_WINNT=0x0601>
 )
 
-foreach (GROUP "Core" "Hooks" "UI" "Detail")
+target_precompile_headers(
+    GDMX
+PRIVATE
+    <boost/asio.hpp>
+    <boost/iostreams/stream.hpp>
+)
+
+foreach (GROUP "Core" "Hooks" "Models" "Net" "UI" "Detail")
     string(TOUPPER ${GROUP} GROUP_UPPER)
     set(HEADERS_LIST_VAR "GDMX_${GROUP_UPPER}_HEADERS")
     set(SOURCES_LIST_VAR "GDMX_${GROUP_UPPER}_SOURCES")

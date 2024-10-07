@@ -1,8 +1,10 @@
 #include "player.hpp"
+#include "gdmx_manager.hpp"
 #include <Geode/Geode.hpp>
 using namespace geode::prelude;
 
-GDMXPlayer::GDMXPlayer(GJBaseGameLayer* game_layer, size_t gdmx_user_id)
+GDMXPlayerObject::GDMXPlayerObject(GJBaseGameLayer* game_layer,
+                                   size_t           gdmx_user_id)
     : gdmx_user_id(gdmx_user_id)
 {
   const auto manager = GameManager::sharedState();
@@ -20,32 +22,32 @@ GDMXPlayer::GDMXPlayer(GJBaseGameLayer* game_layer, size_t gdmx_user_id)
   player->setVisible(true);
 }
 
-void GDMXPlayer::update(float delta)
+void GDMXPlayerObject::update(float delta)
 {
   player->update(delta);
   player->m_position = player->getPosition();
 }
 
-void GDMXPlayer::updateRotation(float delta)
+void GDMXPlayerObject::updateRotation(float delta)
 {
   player->updateRotation(delta);
   player->m_shipRotation = player->getPosition();
 }
 
 // PlayerObject::updateEffects is inlined on windows
-void GDMXPlayer::updateEffects(float delta)
+void GDMXPlayerObject::updateEffects(float delta)
 {
   player->m_waveTrail->updateStroke(delta);
 }
 
-void GDMXPlayer::updateVisibility(float delta)
+void GDMXPlayerObject::updateVisibility(float delta)
 {
   // responsible for wave trail pulsing (see PlayerObject::update)
   player->m_waveTrailPulseRelated =
       player->m_gameLayer->m_player1->m_waveTrailPulseRelated;
 }
 
-void GDMXPlayer::checkForEnd()
+void GDMXPlayerObject::checkForEnd()
 {
   auto* const endportal = player->m_gameLayer->m_endPortal;
   auto [endposx, _]     = endportal->getSpawnPos();
@@ -79,18 +81,45 @@ void GDMXPlayer::checkForEnd()
   player->runAction(CCEaseIn::create(CCRotateBy::create(1.0f, 360.0f), 1.5f));
 }
 
-void GDMXPlayer::registerPlayer()
+void GDMXPlayerObject::registerPlayer()
 {
   player->m_gameLayer->m_objectLayer->addChild(player, 59);
 }
 
-void GDMXPlayer::unregisterPlayer()
+void GDMXPlayerObject::unregisterPlayer()
 {
   player->m_gameLayer->m_objectLayer->removeChild(player);
 }
 
-void GDMXPlayer::reset()
+void GDMXPlayerObject::reset()
 {
   player->setStartPos({ 0, 105.f });
   player->resetObject();
+}
+
+IconIDs IconIDs::self()
+{
+  const auto manager = GameManager::get();
+  return { .cube   = (uint32_t)manager->getPlayerFrame(),
+           .ship   = (uint32_t)manager->getPlayerShip(),
+           .ball   = (uint32_t)manager->getPlayerBall(),
+           .ufo    = (uint32_t)manager->getPlayerBird(),
+           .wave   = (uint32_t)manager->getPlayerDart(),
+           .robot  = (uint32_t)manager->getPlayerRobot(),
+           .spider = (uint32_t)manager->getPlayerSpider(),
+           .swing  = (uint32_t)manager->getPlayerSwing() };
+}
+
+GDMXPlayer GDMXPlayer::self(bool local)
+{
+  auto* const manager = GameManager::get();
+  GDMXPlayer instance{
+    .id     = GDMXManager::get().getID(local),
+    .icons  = IconIDs::self(),
+    .colors = {manager->getPlayerColor(), manager->getPlayerColor2()}
+  };
+
+  if (manager->getPlayerGlow())
+    instance.glow = manager->getPlayerGlowColor();
+  return instance;
 }
