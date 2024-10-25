@@ -1,19 +1,16 @@
 #include "lobbies_popup.hpp"
 #include "lobby_cell.hpp"
 #include "create_lobby_popup.hpp"
-#include "lobby.hpp"
 #include "gdmx_manager.hpp"
-#include "requests.hpp"
-#include <boost/archive/binary_oarchive.hpp>
-#include <boost/archive/binary_iarchive.hpp>
+#include <utils/logging.hpp>
+#include <eos/portable_iarchive.hpp>
+#include <eos/portable_oarchive.hpp>
 #include <boost/asio/experimental/awaitable_operators.hpp>
-#include <boost/iostreams/device/array.hpp>
-#include <boost/iostreams/stream.hpp>
 #include <variant>
 #include <Geode/Geode.hpp>
 namespace asio = boost::asio;
-namespace bio  = boost::iostreams;
 using namespace asio::experimental::awaitable_operators;
+using namespace std::chrono_literals;
 using namespace cocos2d;
 using asio::ip::udp;
 
@@ -127,13 +124,15 @@ asio::awaitable<void> LobbiesPopup::refresh(CCPoint circle_pos)
   auto* circle = LoadingCircle::create();
   circle->m_sprite->setPosition(circle_pos);
   circle->show();
+  bool circle_active = true;
+
+  std::vector<geode::Ref<LobbyCell>> cells;
 
   if (auto lobby = ActiveLobby::get())
   {
-    auto* cell = LobbyCell::create(lobby->info(), bg_width, bg_height, colored);
+    auto& cell = cells.emplace_back(
+        LobbyCell::create(lobby->data(), { bg_width, bg_height / 5 }, colored));
     cell->markJoined(lobby->isHost());
-    lobbies_list->m_contentLayer->addChild(cell);
-    lobbies_list->m_contentLayer->updateLayout();
     colored = false;
   }
 
@@ -144,58 +143,85 @@ asio::awaitable<void> LobbiesPopup::refresh(CCPoint circle_pos)
   socket.set_option(asio::socket_base::broadcast(true));
 
   {
-    asio::streambuf                 buffer;
-    std::ostream                    stream{ &buffer };
-    boost::archive::binary_oarchive archive{ stream };
+    asio::streambuf        buffer;
+    eos::portable_oarchive archive{ buffer };
     archive << RequestType::FetchLobbies;
 
-    co_await socket.async_send_to(buffer.data(), local_target,
-                                  asio::use_awaitable);
+    co_await socket.async_send_to(buffer.data(), local_target);
   }
+
+  log::debug("listening for lobbies...");
+
+  const auto wait_start = std::chrono::steady_clock::now();
 
   while (true)
   {
-    udp::endpoint      sender{};
-    std::vector<char>  response;
-    asio::steady_timer timer{ ctx, response_timeout };
+    asio::streambuf           buffer;
+    boost::system::error_code errc;
+    udp::endpoint             sender;
+    asio::steady_timer        timer{ ctx, response_timeout };
 
-    std::variant<size_t, std::monostate> result =
-        co_await (socket.async_receive_from(asio::buffer(response), sender,
-                                            asio::use_awaitable) ||
-                  timer.async_wait(asio::use_awaitable));
+    auto result = co_await (
+        socket.async_receive_from(
+            buffer.prepare(max_response_size), sender,
+            asio::redirect_error(asio::use_awaitable, errc)) ||
+        timer.async_wait(asio::redirect_error(asio::use_awaitable, errc)));
 
-    if (std::holds_alternative<std::monostate>(result))
-      break;
+    size_t* plen = std::get_if<size_t>(&result);
+    if (!plen)
+    {
+      if (!cells.empty())
+      {
+        for (auto& cell : cells)
+          lobbies_list->m_contentLayer->addChild(cell);
+        lobbies_list->m_contentLayer->updateLayout();
+        cells.clear();
+      }
 
-    if (sender != local_target)
+      if (circle_active)
+      {
+        circle->removeFromParent();
+        circle_active = false;
+      }
+
+      if ((std::chrono::steady_clock::now() - wait_start) > 5s)
+        break;
       continue;
+    }
 
-    bio::stream_buffer<bio::array_source> buffer{ response.data(),
-                                                  response.size() };
-    boost::archive::binary_iarchive       archive{ buffer };
+    buffer.commit(*plen);
 
-    RequestType type{};
-    archive >> type;
+    auto  type = RequestType::Empty;
+    Lobby lobby;
 
-    if (type != RequestType::SendLobby)
+    try
+    {
+      eos::portable_iarchive archive{ buffer };
+      archive >> type;
+      if (type != RequestType::SendLobby)
+        continue;
+      archive >> lobby;
+    }
+    catch (const boost::archive::archive_exception& exception)
+    {
+      log::error("Archive Exception - {}", exception.what());
+      if (type != RequestType::Empty)
+        log::error("Request was {}: {}", fmt::underlying(type), type);
       continue;
-
-    Lobby lobby{};
-    archive >> lobby;
+    }
 
     if (auto active_lobby = ActiveLobby::get())
     {
-      if (active_lobby->info().host_id == lobby.host_id)
+      if (active_lobby->hostID() == lobby.host_id)
         continue;
     }
 
-    lobbies_list->m_contentLayer->addChild(
-        LobbyCell::create(lobby, bg_width, bg_height, colored));
+    cells.emplace_back(LobbyCell::create(std::move(lobby),
+                                         { bg_width, bg_height / 5 }, colored));
     colored = !colored;
-    lobbies_list->m_contentLayer->updateLayout();
   }
 
-  circle->removeFromParent();
+  log::debug("done listening for lobbies");
 }
 
 void LobbiesPopup::onCreateLobby(CCObject*)

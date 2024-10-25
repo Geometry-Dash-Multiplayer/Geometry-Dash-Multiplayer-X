@@ -1,5 +1,7 @@
 #include "create_lobby_popup.hpp"
 #include "gdmx_manager.hpp"
+#include "lobbies_popup.hpp"
+#include "lobby_cell.hpp"
 #include <Geode/Geode.hpp>
 using namespace geode::prelude;
 
@@ -75,7 +77,7 @@ bool CreateLobbyPopup::setup()
   return true;
 }
 
-void CreateLobbyPopup::onSubmit(CCObject*) 
+void CreateLobbyPopup::onSubmit(CCObject*)
 {
   auto name = name_input->getString();
   if (name.empty())
@@ -96,6 +98,17 @@ void CreateLobbyPopup::onSubmit(CCObject*)
     return;
   }
 
-  GDMXManager::get().createLobby(LobbyType::Local, name);
+  GDMXManager::get().createLobby(name, LobbyType::Local);
   removeFromParent();
+
+  auto* lobbies_popup =
+      static_cast<LobbiesPopup*>(CCScene::get()->getChildByID("lobbies-popup"));
+  auto [bg_width, bg_height] = lobbies_popup->background->getContentSize();
+  auto* cell =
+      LobbyCell::create(ActiveLobby::get()->data(), { bg_width, bg_height / 5 },
+                        lobbies_popup->starts_colored);
+  lobbies_popup->starts_colored = !lobbies_popup->starts_colored;
+  cell->markJoined(true);
+  lobbies_popup->lobbies_list->m_contentLayer->addChild(cell, -1);
+  lobbies_popup->lobbies_list->m_contentLayer->updateLayout();
 }

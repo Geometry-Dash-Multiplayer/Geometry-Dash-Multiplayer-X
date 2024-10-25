@@ -1,10 +1,11 @@
 #pragma once
-#include "lobby.hpp"
-#include <boost/asio.hpp>
+#include <models/lobby.hpp>
 
 class BackgroundTasks
 {
 public:
+  template <typename T>
+  using coro = boost::asio::awaitable<T>;
   using finish_callback    = ActiveLobby::finish_callback;
   using report_callback    = ActiveLobby::report_callback;
   using cancelled_callback = ActiveLobby::cancelled_callback;
@@ -13,8 +14,9 @@ public:
   BackgroundTasks(report_callback&&                 report,
                   const std::optional<handle_type>& handle);
 
-  boost::asio::awaitable<void> listenForNewClients();
-  boost::asio::awaitable<void> listen();
+  coro<void> listenForNewClients();
+  coro<void> listen();
+  coro<void> cleanup();
 
   void run() { ctx.run(); }
 

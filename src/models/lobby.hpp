@@ -1,15 +1,19 @@
 #pragma once
 #include <memory>
-#include <chrono>
 #include <boost/serialization/string.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/asio.hpp>
 #include <Geode/utils/Task.hpp>
 #include <Geode/loader/Event.hpp>
+#include <net/requests.hpp>
 #include "player.hpp"
-#include "requests.hpp"
 
 class BackgroundTasks;
+
+namespace eos
+{
+  class portable_iarchive;
+}
 
 enum class LobbyType : uint8_t
 {
@@ -19,27 +23,58 @@ enum class LobbyType : uint8_t
   Global
 };
 
-struct Lobby
+class PartialLobby
 {
-  // note that the host id is also the lobby id since the host can only have one
-  // lobby at a time
-  uint64_t    host_id = 0;
+public:
   std::string name;
-  LobbyType   type         = LobbyType::Local;
-  uint32_t    player_count = 0;
+  LobbyType   type;
 
-  Lobby() = default;
+  PartialLobby() = default;
 
-  Lobby(uint64_t host_id, LobbyType type, std::string_view name)
-      : host_id(host_id), name(name), type(type)
+  PartialLobby(std::string_view name, LobbyType type) : name(name), type(type)
   {
   }
 
+private:
   template <typename archive>
   void serialize(archive& arch, const unsigned int version)
   {
-    arch & host_id & name & type & player_count;
+    arch & name & type;
   }
+
+  friend class boost::serialization::access;
+};
+
+class Lobby : public PartialLobby
+{
+public:
+  uint64_t host_id      = 0;
+  uint32_t player_count = 0;
+
+  Lobby() = default;
+
+  Lobby(uint64_t host_id, std::string_view name, LobbyType type,
+        uint32_t player_count)
+      : PartialLobby(name, type), host_id(host_id), player_count(player_count)
+  {
+  }
+
+  Lobby(const PartialLobby& other, uint64_t host_id, uint32_t player_count)
+      : PartialLobby(other), host_id(host_id), player_count(player_count)
+  {
+  }
+
+private:
+  // clang-format off
+  template <typename archive>
+  void serialize(archive& arch, const unsigned int version)
+  {
+    arch & boost::serialization::base_object<PartialLobby>(*this);
+    arch & host_id & player_count;
+  }
+
+  // clang-format on
+  friend class boost::serialization::access;
 };
 
 class ActiveLobby
@@ -52,38 +87,37 @@ public:
 
   static ActiveLobby* get();
 
-  ActiveLobby(LobbyType type, std::string_view name);
-  ActiveLobby(const Lobby&                             lobby,
-              const std::optional<socket_handle_type>& socket_handle);
+  virtual void dispatch(eos::portable_iarchive& archive, RequestType type);
 
-  const Lobby& info()
-  {
-    lobby.player_count = playerCount();
-    return lobby;
-  }
+  bool isHost();
 
-  virtual bool   isHost()                               = 0;
-  virtual size_t playerCount()                          = 0;
-  virtual void   erasePlayer(uint64_t id)               = 0;
-  virtual void   registerPlayer(const GDMXPlayer& player,
-                                const endpoint&   sender) = 0;
+  // events
+  virtual void enteredLevel(uint32_t level_id) = 0;
+  virtual void exitedLevel(uint32_t level_id)  = 0;
+
+  // getters
+  virtual uint64_t         hostID()      = 0;
+  virtual std::string_view name()        = 0;
+  virtual LobbyType        type()        = 0;
+  virtual uint32_t         playerCount() = 0;
+  virtual Lobby            data()        = 0;
 
   virtual ~ActiveLobby();
 
 protected:
-  using LobbyMainThread    = geode::Task<bool, std::pair<EventType, uint64_t>>;
-  using Listener           = geode::EventListener<LobbyMainThread>;
-  using finish_callback    = LobbyMainThread::PostResult;
-  using report_callback    = LobbyMainThread::PostProgress;
+  using LobbyMainThread = geode::Task<bool, std::pair<EventType, EventValue>>;
+  using Listener        = geode::EventListener<LobbyMainThread>;
+  using finish_callback = LobbyMainThread::PostResult;
+  using report_callback = LobbyMainThread::PostProgress;
   using cancelled_callback = LobbyMainThread::HasBeenCancelled;
   using result_type        = LobbyMainThread::Result;
   using cancel_type        = LobbyMainThread::Cancel;
   using event_type         = LobbyMainThread::Event;
 
-  Lobby            lobby;
   Listener         listener;
   BackgroundTasks* ptasks = nullptr;
 
+  ActiveLobby()                              = default;
   ActiveLobby(const ActiveLobby&)            = delete;
   ActiveLobby& operator=(const ActiveLobby&) = delete;
 
@@ -98,29 +132,47 @@ class HostedLobby : public ActiveLobby
 public:
   struct PlayerItem;
 
-  static HostedLobby* get();
-
-  HostedLobby(LobbyType type, std::string_view name) : ActiveLobby(type, name)
+  static HostedLobby* get()
   {
+    return dynamic_cast<HostedLobby*>(ActiveLobby::get());
   }
 
-  bool isHost() override { return true; }
+  HostedLobby(std::string_view name, LobbyType type) : lobby(name, type)
+  {
+    spawnMainThread(std::nullopt);
+  }
 
-  size_t playerCount() override { return players.size(); }
+  void dispatch(eos::portable_iarchive& archive, RequestType type) override;
 
-  void erasePlayer(uint64_t id) override;
+  void dispatchLookup(eos::portable_iarchive& archive, RequestType type,
+                      const endpoint& sender);
 
-  void registerPlayer(const GDMXPlayer& player,
-                      const endpoint&   sender) override;
+  void enteredLevel(uint32_t level_id) override;
+
+  void exitedLevel(uint32_t level_id) override;
+
+  void playerEnteredLevel(uint64_t id, uint32_t level_id);
+
+  void playerExitedLevel(uint64_t id, uint32_t level_id);
+
+  uint64_t         hostID() override;
+  std::string_view name() override;
+  LobbyType        type() override;
+  uint32_t         playerCount() override;
+
+  Lobby data() override { return { lobby, hostID(), playerCount() }; }
+
+  coro<void> reportShutdown(boost::asio::ip::udp::socket& socket);
 
 private:
   using player_map = boost::unordered_flat_map<uint64_t, PlayerItem>;
   using time_point = std::chrono::steady_clock::time_point;
 
-  player_map players;
+  PartialLobby lobby;
+  player_map   players;
 
-  coro<void> reportPlayerRemoval(uint64_t id);
-  coro<void> reportPlayerRegistration(uint64_t id);
+  coro<void> reportPlayerEnteredLevel(GDMXPlayer player, uint32_t level_id);
+  coro<void> reportPlayerExitedLevel(uint64_t id, uint32_t level_id);
 
   friend class BackgroundTasks;
 };
@@ -128,28 +180,44 @@ private:
 class JoinedLobby : public ActiveLobby
 {
 public:
-  static JoinedLobby* get();
-
-  JoinedLobby(const endpoint& server_endpoint, const Lobby& lobby,
-              const std::optional<socket_handle_type>& socket_handle)
-      : server(server_endpoint), ActiveLobby(lobby, socket_handle)
+  static JoinedLobby* get()
   {
+    return dynamic_cast<JoinedLobby*>(ActiveLobby::get());
   }
 
-  bool isHost() override { return false; }
+  JoinedLobby(const Lobby& lobby, const endpoint& server,
+              const std::optional<socket_handle_type>& socket_handle)
+      : lobby(lobby), server(server)
+  {
+    spawnMainThread(socket_handle);
+  }
 
-  size_t playerCount() override { return players.size(); }
+  void dispatch(eos::portable_iarchive& archive, RequestType type) override;
 
-  void erasePlayer(uint64_t id) override;
+  void enteredLevel(uint32_t level_id) override;
 
-  void registerPlayer(const GDMXPlayer& player,
-                      const endpoint&   sender) override;
+  void exitedLevel(uint32_t level_id) override;
+
+  uint64_t hostID() override { return lobby.host_id; }
+
+  std::string_view name() override { return lobby.name; }
+
+  LobbyType type() override { return lobby.type; }
+
+  uint32_t playerCount() override { return lobby.player_count; }
+
+  Lobby data() override { return lobby; }
 
 private:
-  using player_map = boost::unordered_flat_map<uint64_t, GDMXPlayer>;
+  Lobby                            lobby;
+  endpoint                         server;
+  boost::asio::cancellation_signal enter_success;
+  boost::asio::cancellation_signal exit_success;
 
-  player_map players;
-  endpoint   server;
+  coro<void> reportPlayerLevelChange(uint32_t level_id, bool enter);
+  coro<void> keepAlive();
+
+  friend class BackgroundTasks;
 };
 
 struct HostedLobby::PlayerItem
@@ -157,6 +225,7 @@ struct HostedLobby::PlayerItem
   GDMXPlayer                     player{};
   boost::asio::ip::udp::endpoint source;
   time_point                     last_update = std::chrono::steady_clock::now();
+  uint32_t                       level_id    = 0;
 
   template <typename archive>
   void serialize(archive& arch, const unsigned int version)
@@ -167,3 +236,5 @@ struct HostedLobby::PlayerItem
 
 BOOST_CLASS_IMPLEMENTATION(HostedLobby::PlayerItem,
                            boost::serialization::object_serializable);
+
+inline bool ActiveLobby::isHost() { return dynamic_cast<HostedLobby*>(this); }

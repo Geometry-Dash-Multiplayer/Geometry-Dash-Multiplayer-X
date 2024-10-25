@@ -3,23 +3,28 @@
 #include <Geode/Geode.hpp>
 using namespace geode::prelude;
 
-GDMXPlayerObject::GDMXPlayerObject(GJBaseGameLayer* game_layer,
-                                   size_t           gdmx_user_id)
-    : gdmx_user_id(gdmx_user_id)
+GDMXPlayerObject::GDMXPlayerObject(const GDMXPlayer& info)
 {
-  const auto manager = GameManager::sharedState();
-  player =
-      PlayerObject::create(manager->getPlayerFrame(), manager->getPlayerShip(),
-                           game_layer, game_layer->m_objectLayer, true);
-  player->setColor(manager->colorForIdx(manager->getPlayerColor2()));
-  player->setSecondColor(manager->colorForIdx(manager->getPlayerColor()));
-  player->enableCustomGlowColor(
-      manager->colorForIdx(manager->getPlayerGlowColor()));
+  auto* const manager    = GameManager::get();
+  auto* const game_layer = GJBaseGameLayer::get();
+  player = PlayerObject::create(info.icons.cube, info.icons.ship, game_layer,
+                                game_layer->m_objectLayer, true);
+  player->setColor(manager->colorForIdx(info.colors.first));
+  player->setSecondColor(manager->colorForIdx(info.colors.second));
+  if (info.glow)
+    player->enableCustomGlowColor(manager->colorForIdx(*info.glow));
   player->updateGlowColor();
-  player->m_ignoreDamage = true;
   player->addAllParticles();
-  player->setID(fmt::format("gdmx-player-{}", gdmx_user_id));
+  player->setID(fmt::format("gdmx-player-{}", info.id));
   player->setVisible(true);
+  player->setUserObject(ObjWrapper<GDMXPlayer>::create(info));
+  player->m_ignoreDamage = true;
+}
+
+GDMXPlayerObject::~GDMXPlayerObject()
+{
+  if (player && player->getParent())
+    player->removeFromParent();
 }
 
 void GDMXPlayerObject::update(float delta)
@@ -86,11 +91,6 @@ void GDMXPlayerObject::registerPlayer()
   player->m_gameLayer->m_objectLayer->addChild(player, 59);
 }
 
-void GDMXPlayerObject::unregisterPlayer()
-{
-  player->m_gameLayer->m_objectLayer->removeChild(player);
-}
-
 void GDMXPlayerObject::reset()
 {
   player->setStartPos({ 0, 105.f });
@@ -113,10 +113,10 @@ IconIDs IconIDs::self()
 GDMXPlayer GDMXPlayer::self(bool local)
 {
   auto* const manager = GameManager::get();
-  GDMXPlayer instance{
-    .id     = GDMXManager::get().getID(local),
-    .icons  = IconIDs::self(),
-    .colors = {manager->getPlayerColor(), manager->getPlayerColor2()}
+  GDMXPlayer  instance{
+     .id     = GDMXManager::get().getID(local),
+     .icons  = IconIDs::self(),
+     .colors = {manager->getPlayerColor(), manager->getPlayerColor2()}
   };
 
   if (manager->getPlayerGlow())

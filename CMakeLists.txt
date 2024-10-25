@@ -38,9 +38,14 @@ set(
     "options_menu"
 )
 
-set(GDMX_DETAIL_PROJECT_FILES "macros")
+set(
+    GDMX_UTILS_PROJECT_FILES
+    "macros"
+    "spawn"
+    "logging"
+)
 
-foreach (DIR "core" "hooks" "models" "net" "ui" "detail")
+foreach (DIR "core" "hooks" "models" "net" "ui" "utils")
     string(TOUPPER ${DIR} DIR_UPPER)
     set(PROJECT_FILES_VAR "GDMX_${DIR_UPPER}_PROJECT_FILES")
     foreach (SRC IN LISTS ${PROJECT_FILES_VAR})
@@ -72,7 +77,7 @@ add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 setup_geode_mod(${PROJECT_NAME})
 
 message(STATUS "Setting up boost")
-set(BOOST_INCLUDE_LIBRARIES asio serialization iostreams unordered)
+set(BOOST_INCLUDE_LIBRARIES asio serialization unordered math program_options)
 CPMAddPackage(
     NAME Boost
     URL https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-cmake.7z
@@ -81,15 +86,14 @@ CPMAddPackage(
 )
 
 CPMAddPackage(
-    NAME NetIF
-    GIT_REPOSITORY https://github.com/GMLC-TDC/netif
-    GIT_TAG eb68f3e
+    NAME eos_portable_archive
+    GIT_REPOSITORY https://github.com/AngelDev06/eos-portable-archive
+    GIT_TAG 432eeb1
 )
 
 set_target_properties(
     boost_serialization 
     boost_wserialization
-    boost_iostreams
 PROPERTIES
     FOLDER "Dependencies"
 )
@@ -106,20 +110,15 @@ target_link_libraries(
     GDMX
     Boost::asio
     Boost::serialization
-    Boost::iostreams
     Boost::unordered
-    NetIF::NetIF
+    eos::portable_archive
 )
 
 target_include_directories(
     GDMX
 PRIVATE
+    src
     src/core
-    src/hooks
-    src/models
-    src/net
-    src/ui
-    src/detail
 )
 
 target_compile_definitions(
@@ -132,10 +131,9 @@ target_precompile_headers(
     GDMX
 PRIVATE
     <boost/asio.hpp>
-    <boost/iostreams/stream.hpp>
 )
 
-foreach (GROUP "Core" "Hooks" "Models" "Net" "UI" "Detail")
+foreach (GROUP "Core" "Hooks" "Models" "Net" "UI" "Utils")
     string(TOUPPER ${GROUP} GROUP_UPPER)
     set(HEADERS_LIST_VAR "GDMX_${GROUP_UPPER}_HEADERS")
     set(SOURCES_LIST_VAR "GDMX_${GROUP_UPPER}_SOURCES")
@@ -147,5 +145,6 @@ set_target_properties(
     GeodeBindings
     GDMX_PACKAGE
     fmt
+    boost_program_options
 PROPERTIES
     FOLDER "Dependencies")

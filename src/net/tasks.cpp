@@ -1,12 +1,11 @@
 #include "tasks.hpp"
 #include "requests.hpp"
-#include <boost/archive/binary_iarchive.hpp>
-#include <boost/archive/binary_oarchive.hpp>
-#include <boost/iostreams/device/array.hpp>
-#include <boost/iostreams/stream.hpp>
-namespace bio  = boost::iostreams;
+#include <utils/logging.hpp>
+#include <eos/portable_iarchive.hpp>
+#include <boost/asio/experimental/awaitable_operators.hpp>
 namespace asio = boost::asio;
 using namespace std::chrono_literals;
+using namespace asio::experimental::awaitable_operators;
 using asio::ip::udp;
 
 BackgroundTasks::BackgroundTasks(report_callback&&                 report,
@@ -18,11 +17,12 @@ BackgroundTasks::BackgroundTasks(report_callback&&                 report,
   else
     socket.open(udp::v4());
 
-  if (auto* lobby = HostedLobby::get())
+  auto* lobby = ActiveLobby::get();
+  if (lobby->isHost())
   {
     lookup_socket.open(udp::v4());
 
-    if (lobby->info().type == LobbyType::Local)
+    if (lobby->type() == LobbyType::Local)
     {
       if (!handle)
         socket.bind(udp::endpoint(udp::v4(), main_socket_port));
@@ -30,7 +30,12 @@ BackgroundTasks::BackgroundTasks(report_callback&&                 report,
 
       asio::co_spawn(ctx, listenForNewClients(), asio::detached);
     }
+
+    asio::co_spawn(ctx, cleanup(), asio::detached);
   }
+  else
+    asio::co_spawn(ctx, dynamic_cast<JoinedLobby&>(*lobby).keepAlive(),
+                   asio::detached);
 
   asio::co_spawn(ctx, listen(), asio::detached);
 }
@@ -39,44 +44,29 @@ asio::awaitable<void> BackgroundTasks::listenForNewClients()
 {
   while (true)
   {
-    std::vector<char> response;
-    udp::endpoint     sender;
+    asio::streambuf buffer;
+    udp::endpoint   sender;
 
-    co_await lookup_socket.async_receive_from(asio::buffer(response), sender);
-    RequestType type{};
+    size_t len = co_await lookup_socket.async_receive_from(
+        buffer.prepare(max_response_size), sender);
 
+    buffer.commit(len);
+
+    auto type = RequestType::Empty;
+
+    try
     {
-      bio::stream_buffer<bio::array_source> buffer{ response.data(),
-                                                    response.size() };
-      boost::archive::binary_iarchive       archive{ buffer };
+      eos::portable_iarchive archive{ buffer };
       archive >> type;
 
-      auto* lobby = HostedLobby::get();
-      if (type == RequestType::JoinLobby)
-      {
-        GDMXPlayer player{};
-        archive >> player;
-        lobby->registerPlayer(player, sender);
-      }
+      HostedLobby::get()->dispatchLookup(archive, type, sender);
     }
-
-    if (type != RequestType::FetchLobbies && type != RequestType::JoinLobby)
+    catch (const boost::archive::archive_exception& exception)
     {
-      geode::log::debug("unhandled request type: {}", to_string(type));
-      continue;
+      log::error("Archive Exception - {}", exception.what());
+      if (type != RequestType::Empty)
+        log::error("Request was {}: {}", fmt::underlying(type), type);
     }
-
-    asio::streambuf                 buffer;
-    std::ostream                    stream{ &buffer };
-    boost::archive::binary_oarchive archive{ stream };
-
-    if (type == RequestType::FetchLobbies)
-      archive << RequestType::SendLobby << ActiveLobby::get()->info();
-    else
-      archive << RequestType::JoinSuccessful << HostedLobby::get()->players;
-
-    co_await lookup_socket.async_send_to(buffer.data(), sender,
-                                         asio::use_awaitable);
   }
 }
 
@@ -84,41 +74,53 @@ asio::awaitable<void> BackgroundTasks::listen()
 {
   while (true)
   {
-    std::vector<char> response;
-    udp::endpoint     sender;
+    asio::streambuf buffer;
+    udp::endpoint   sender;
 
-    co_await socket.async_receive_from(asio::buffer(response), sender);
+    size_t len = co_await socket.async_receive_from(
+        buffer.prepare(max_response_size), sender);
 
-    RequestType type{};
+    buffer.commit(len);
 
+    auto type = RequestType::Empty;
+
+    try
     {
-      bio::stream_buffer<bio::array_source> buffer{ response.data(),
-                                                    response.size() };
-      boost::archive::binary_iarchive       archive{ buffer };
+      eos::portable_iarchive archive{ buffer };
       archive >> type;
 
-      if (auto* lobby = HostedLobby::get())
-      {
-        if (type == RequestType::RetainJoin)
-        {
-          uint64_t id = 0;
-          archive >> id;
-          lobby->players[id].last_update = std::chrono::steady_clock::now();
-          continue;
-        }
-      }
-      else
-      {
-        if (type == RequestType::PlayerRemove)
-        {
-          uint64_t id = 0;
-          archive >> id;
-          ActiveLobby::get()->erasePlayer(id);
-          continue;
-        }
-      }
+      ActiveLobby::get()->dispatch(archive, type);
     }
+    catch (const boost::archive::archive_exception& exception)
+    {
+      log::error("Archive Exception! Reason: {}", exception.what());
+      if (type != RequestType::Empty)
+        log::error("Request was {}: {}", fmt::underlying(type), type);
+    }
+  }
+}
 
-    geode::log::debug("unhandled request type: {}", to_string(type));
+asio::awaitable<void> BackgroundTasks::cleanup()
+{
+  auto* const lobby = HostedLobby::get();
+
+  while (true)
+  {
+    co_await asio::steady_timer(ctx, 5s).async_wait();
+    const auto current = std::chrono::steady_clock::now();
+
+    for (auto itr = lobby->players.begin(); itr != lobby->players.end();)
+    {
+      auto& [id, item] = *itr;
+      if ((current - item.last_update) < 5s)
+      {
+        ++itr;
+        continue;
+      }
+
+      if (item.level_id)
+        lobby->playerExitedLevel(id, item.level_id);
+      itr = lobby->players.erase(itr);
+    }
   }
 }

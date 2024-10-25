@@ -41,9 +41,26 @@ struct GDMXPlayer
 class GDMXPlayerObject
 {
 public:
-  GDMXPlayerObject() = delete;
+  GDMXPlayerObject() = default;
 
-  GDMXPlayerObject(GJBaseGameLayer* game_layer, size_t gdmx_user_id);
+  GDMXPlayerObject(const GDMXPlayer& info);
+
+  GDMXPlayerObject(GDMXPlayerObject&& other) noexcept
+      : player(std::move(other.player)),
+        finished(std::exchange(other.finished, false))
+  {
+  }
+
+  GDMXPlayerObject& operator=(GDMXPlayerObject&& other) noexcept
+  {
+    if (this == &other)
+      return *this;
+    player   = std::move(other.player);
+    finished = std::exchange(other.finished, false);
+    return *this;
+  }
+
+  ~GDMXPlayerObject();
 
   PlayerObject* getObject() { return player; }
 
@@ -55,11 +72,9 @@ public:
   void checkForEnd();
 
   void registerPlayer();
-  void unregisterPlayer();
   void reset();
 
 private:
   geode::Ref<PlayerObject> player;
-  size_t                   gdmx_user_id = 0;
-  bool                     finished     = false;
+  bool                     finished = false;
 };

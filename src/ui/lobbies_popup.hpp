@@ -17,10 +17,13 @@ public:
 
 protected:
   boost::asio::io_context ctx;
-  cocos2d::CCLayerColor*  background   = nullptr;
-  geode::ScrollLayer*     lobbies_list = nullptr;
+  cocos2d::CCLayerColor*  background     = nullptr;
+  geode::ScrollLayer*     lobbies_list   = nullptr;
+  bool                    starts_colored = false;
 
   bool setup() override;
   void onCreateLobby(cocos2d::CCObject*);
   void onJoinLobby(cocos2d::CCObject*);
+
+  friend class CreateLobbyPopup;
 };

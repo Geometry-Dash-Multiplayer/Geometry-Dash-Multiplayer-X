@@ -1,17 +1,14 @@
 #include "lobby_cell.hpp"
 #include "gdmx_manager.hpp"
-#include "requests.hpp"
-#include "tasks.hpp"
-#include <boost/iostreams/device/array.hpp>
-#include <boost/iostreams/stream.hpp>
-#include <boost/archive/binary_oarchive.hpp>
-#include <boost/archive/binary_iarchive.hpp>
+#include <eos/portable_iarchive.hpp>
+#include <eos/portable_oarchive.hpp>
+#include <net/requests.hpp>
+#include <utils/logging.hpp>
 #include <boost/asio/experimental/awaitable_operators.hpp>
 #include <Geode/Geode.hpp>
 namespace asio = boost::asio;
-namespace bio  = boost::iostreams;
 using namespace asio::experimental::awaitable_operators;
-using namespace geode::prelude;
+using namespace cocos2d;
 using asio::ip::udp;
 
 LobbyCell::~LobbyCell()
@@ -20,38 +17,12 @@ LobbyCell::~LobbyCell()
     circle->removeFromParent();
 }
 
-LobbyCell* LobbyCell::create(Lobby&& lobby, float width, float height,
-                             bool colored)
-{
-  auto obj = new LobbyCell(std::move(lobby), colored);
-  if (obj->init(width, height, colored))
-  {
-    obj->autorelease();
-    return obj;
-  }
-
-  delete obj;
-  return nullptr;
-}
-
-LobbyCell* LobbyCell::create(const Lobby& lobby, float width, float height,
-                             bool colored)
-{
-  auto obj = new LobbyCell(lobby, colored);
-  if (obj->init(width, height, colored))
-  {
-    obj->autorelease();
-    return obj;
-  }
-
-  delete obj;
-  return nullptr;
-}
-
-bool LobbyCell::init(float width, float height, bool colored)
+bool LobbyCell::init(CCSize size, bool colored)
 {
   if (!CCNode::init())
     return false;
+  auto [width, height] = size;
+
   setContentSize({ width, height + 2.2f });
   setAnchorPoint({});
   setLayout(ColumnLayout::create()
@@ -73,41 +44,53 @@ bool LobbyCell::init(float width, float height, bool colored)
   auto cell_items = CCNode::create();
   cell_items->setAnchorPoint({ 0, 0.5f });
   cell_items->setPosition({ width / 32, height / 2 });
-  cell_items->setContentWidth(width / 2);
-  cell_items->setLayout(
-      RowLayout::create()->setAxisAlignment(AxisAlignment::Start)->setGap(5));
+  cell_items->setContentWidth(width * 0.6f);
+  cell_items->setLayout(RowLayout::create()
+                            ->setAxisAlignment(AxisAlignment::Start)
+                            ->setGap(5)
+                            ->setAutoScale(false));
   cell_items->setID("cell-items");
   cell_main_layer->addChild(cell_items);
 
   auto icon = CCSprite::create("earth.png"_spr);
-  icon->setLayoutOptions(
-      AxisLayoutOptions::create()->setScaleLimits(0.1f, 0.1f));
-  icon->setID("lobby-icon");
-  cell_items->addChild(icon);
+  icon->setScale(0.1f);
+  icon->setAnchorPoint({});
+  icon->setID("icon");
 
-  auto lobby_name = CCLabelBMFont::create(lobby.name.c_str(), "bigFont.fnt");
-  lobby_name->setScale(0.5f);
-  lobby_name->setLayoutOptions(
-      AxisLayoutOptions::create()->setAutoScale(true)->setScaleLimits(0.35f,
+  auto icon_wrapper = CCNode::create();
+  icon_wrapper->setContentSize(icon->getScaledContentSize());
+  icon_wrapper->setID("icon-wrapper");
+  icon_wrapper->addChild(icon);
+  cell_items->addChild(icon_wrapper);
+
+  auto name = CCLabelBMFont::create(lobby.name.c_str(), "bigFont.fnt");
+  name->setAnchorPoint({});
+  name->setID("name");
+
+  auto name_wrapper = CCNode::create();
+  name_wrapper->setContentSize(
+      { name->getContentWidth(), name->getContentHeight() * 0.85f });
+  name_wrapper->setScale(0.4f);
+  name_wrapper->setLayoutOptions(
+      AxisLayoutOptions::create()->setAutoScale(true)->setScaleLimits(0.3f,
                                                                       0.5f));
-  lobby_name->setID("lobby-name");
-  cell_items->addChild(lobby_name);
+  name_wrapper->setID("name-wrapper");
+  name_wrapper->addChild(name);
+  cell_items->addChild(name_wrapper);
 
-  int         total_user_count = rand(), user_count = rand();
-  std::string counter_text =
-      fmt::format("{}/{}", total_user_count % user_count, total_user_count);
+  std::string counter_text = std::to_string(lobby.player_count);
+  auto user_count = CCLabelBMFont::create(counter_text.c_str(), "bigFont.fnt");
+  user_count->setScale(0.3f);
+  user_count->setAnchorPoint({});
+  user_count->setID("user-count");
 
-  auto user_count_label =
-      CCLabelBMFont::create(counter_text.c_str(), "bigFont.fnt");
-  user_count_label->setScale(0.2f);
-  user_count_label->setPosition(user_count_label->getScaledContentSize() / 2);
-
-  auto user_count_container = CCNode::create();
-  user_count_container->setContentSize(
-      { user_count_label->getScaledContentWidth(),
-        lobby_name->getScaledContentHeight() / 2 });
-  user_count_container->addChild(user_count_label);
-  cell_items->addChild(user_count_container);
+  auto user_count_wrapper = CCNode::create();
+  user_count_wrapper->setContentSize(
+      { user_count->getScaledContentWidth(),
+        user_count->getScaledContentHeight() * 0.9f });
+  user_count_wrapper->setID("user-count-wrapper");
+  user_count_wrapper->addChild(user_count);
+  cell_items->addChild(user_count_wrapper);
 
   auto info_button = CCMenuItemSpriteExtra::create(
       CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png"), this,
@@ -116,11 +99,9 @@ bool LobbyCell::init(float width, float height, bool colored)
   info_button->setPosition(info_button->getScaledContentSize() / 2);
 
   auto info_menu = CCMenu::create();
-  info_menu->setContentSize({ info_button->getScaledContentWidth(),
-                              lobby_name->getScaledContentHeight() });
+  info_menu->setContentSize(info_button->getScaledContentSize());
   info_menu->setID("info-menu");
   info_menu->addChild(info_button);
-
   cell_items->addChild(info_menu);
 
   auto lock_button = CCMenuItemSpriteExtra::create(
@@ -131,8 +112,7 @@ bool LobbyCell::init(float width, float height, bool colored)
   lock_button->setPosition(lock_button->getScaledContentSize() / 2);
 
   auto lock_menu = CCMenu::create();
-  lock_menu->setContentSize({ lock_button->getScaledContentWidth(),
-                              lobby_name->getScaledContentHeight() });
+  lock_menu->setContentSize(lock_button->getScaledContentSize());
   lock_menu->setID("lock-menu");
   lock_menu->addChild(lock_button);
   cell_items->addChild(lock_menu);
@@ -172,14 +152,20 @@ void LobbyCell::update(float delta)
 void LobbyCell::markJoined(bool is_host)
 {
   const char* new_text = is_host ? "Delete" : "Unjoin";
+  auto [width, height] = cell_main_layer->getContentSize();
+
   static_cast<ButtonSprite*>(join_button->getNormalImage())
       ->setString(new_text);
+  join_button->setPositionX(width - (width / 32) -
+                            (join_button->getScaledContentWidth() / 2));
+
   if (colored_layer)
-    colored_layer->setColor({ .b = 0xFF });
+  {
+    colored_layer->setColor({ .g = 0xFF });
+  }
   else
   {
-    auto [width, height] = cell_main_layer->getContentSize();
-    colored_layer = CCLayerColor::create({ .b = 0xFF, .a = 75 }, width, height);
+    colored_layer = CCLayerColor::create({ .g = 0xFF, .a = 75 }, width, height);
     cell_main_layer->addChild(colored_layer, -1);
   }
   join_button->setTag(false);
@@ -187,7 +173,11 @@ void LobbyCell::markJoined(bool is_host)
 
 void LobbyCell::markUnjoined()
 {
+  auto [width, height] = cell_main_layer->getContentSize();
   static_cast<ButtonSprite*>(join_button->getNormalImage())->setString("Join");
+  join_button->setPositionX(width - (width / 32) -
+                            (join_button->getScaledContentWidth() / 2));
+
   if (colored)
     colored_layer->setColor({});
   else
@@ -205,8 +195,9 @@ asio::awaitable<void> LobbyCell::join()
 
   if (auto lobby = ActiveLobby::get())
   {
-    const auto  other_host_id = lobby->info().host_id;
-    const auto  cells = CCArrayExt<LobbyCell*>(getParent()->getChildren());
+    const auto other_host_id = lobby->hostID();
+    const auto cells =
+        geode::cocos::CCArrayExt<LobbyCell*>(getParent()->getChildren());
     auto* const result =
         std::ranges::find_if(cells, [other_host_id](LobbyCell* cell)
                              { return cell->lobby.host_id == other_host_id; });
@@ -228,13 +219,25 @@ asio::awaitable<void> LobbyCell::unjoin()
   udp::endpoint target{ asio::ip::address_v4(lobby.host_id), main_socket_port };
   udp::socket   socket{ ctx, udp::v4() };
 
-  asio::streambuf                 buffer;
-  std::ostream                    stream{ &buffer };
-  boost::archive::binary_oarchive archive{ stream };
+  asio::streambuf        buffer;
+  eos::portable_oarchive archive{ buffer };
+
   archive << RequestType::UnjoinLobby
           << GDMXManager::get().getID(lobby.type == LobbyType::Local);
 
   co_await socket.async_send_to(buffer.data(), target);
+}
+
+asio::awaitable<void> LobbyCell::erase()
+{
+  auto* parent = getParent();
+  parent->removeChild(this, false);
+  parent->updateLayout();
+
+  udp::socket socket{ ctx, udp::v4() };
+  co_await HostedLobby::get()->reportShutdown(socket);
+
+  GDMXManager::get().unjoinLobby();
 }
 
 asio::awaitable<void> LobbyCell::joinUnchecked()
@@ -244,9 +247,9 @@ asio::awaitable<void> LobbyCell::joinUnchecked()
   udp::socket   socket{ ctx, udp::v4() };
 
   {
-    asio::streambuf                 buffer;
-    std::ostream                    stream{ &buffer };
-    boost::archive::binary_oarchive archive{ stream };
+    asio::streambuf        buffer;
+    eos::portable_oarchive archive{ buffer };
+
     archive << RequestType::JoinLobby
             << GDMXPlayer::self(lobby.type == LobbyType::Local);
 
@@ -255,16 +258,19 @@ asio::awaitable<void> LobbyCell::joinUnchecked()
 
   while (true)
   {
-    udp::endpoint      sender;
-    std::vector<char>  response;
-    asio::steady_timer timer{ ctx, response_timeout };
+    asio::streambuf           buffer;
+    boost::system::error_code errc;
+    udp::endpoint             sender;
+    asio::steady_timer        timer{ ctx, response_timeout };
 
-    std::variant<size_t, std::monostate> result =
-        co_await (socket.async_receive_from(asio::buffer(response), sender,
-                                            asio::use_awaitable) ||
-                  timer.async_wait(asio::use_awaitable));
+    auto result = co_await (
+        socket.async_receive_from(
+            buffer.prepare(max_response_size), sender,
+            asio::redirect_error(asio::use_awaitable, errc)) ||
+        timer.async_wait(asio::redirect_error(asio::use_awaitable, errc)));
 
-    if (std::holds_alternative<std::monostate>(result))
+    size_t* plen = std::get_if<size_t>(&result);
+    if (!plen)
     {
       FLAlertLayer::create(
           "Unreachable Host",
@@ -276,22 +282,36 @@ asio::awaitable<void> LobbyCell::joinUnchecked()
     if (sender != target)
       continue;
 
-    RequestType                     type{};
-    bio::stream<bio::array_source>  stream{ response.data(), response.size() };
-    boost::archive::binary_iarchive archive{ stream };
-    archive >> type;
+    buffer.commit(*plen);
+    auto type = RequestType::Empty;
 
-    if (type != RequestType::JoinSuccessful)
+    try
     {
-      FLAlertLayer::create(
-          "Unknown Error",
-          "An unknown error has occurred while joining the lobby", "OK")
-          ->show();
-      break;
-    }
+      eos::portable_iarchive archive{ buffer };
+      archive >> type;
 
-    GDMXManager::get().joinLobby(sender, lobby, socket.release());
-    markJoined(false);
+      if (type != RequestType::JoinSuccessful)
+      {
+        FLAlertLayer::create("Invalid Response",
+                             "Received a response with an improper flag (maybe "
+                             "the host runs an outdated version of gdmx?)",
+                             "OK")
+            ->show();
+        break;
+      }
+
+      GDMXManager::get().joinLobby(lobby, sender, socket.release());
+      markJoined(false);
+    }
+    catch (const boost::archive::archive_exception& exception)
+    {
+      FLAlertLayer::create("Corrupted Response",
+                           "The response body contains invalid binary data, "
+                           "maybe try again later",
+                           "OK")
+          ->show();
+      log::error("Received Corrupted Response: {}", exception.what());
+    }
     break;
   }
 
@@ -311,7 +331,10 @@ void LobbyCell::onLock(CCObject*)
 
 void LobbyCell::onJoin(CCObject*)
 {
-  asio::co_spawn(ctx, join_button->getTag() ? join() : unjoin(),
+  asio::co_spawn(ctx,
+                 join_button->getTag()          ? join()
+                 : ActiveLobby::get()->isHost() ? erase()
+                                                : unjoin(),
                  asio::detached);
   scheduleUpdate();
 }

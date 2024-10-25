@@ -1,7 +1,6 @@
 #pragma once
 #include <memory>
-#include "player.hpp"
-#include "lobby.hpp"
+#include <models/lobby.hpp>
 
 class GDMXManager
 {
@@ -12,10 +11,10 @@ public:
 
   ActiveLobby* getActiveLobby() { return active_lobby.get(); }
 
-  void createLobby(LobbyType type, std::string_view name);
+  void createLobby(std::string_view name, LobbyType type);
 
-  void joinLobby(const boost::asio::ip::udp::endpoint&    server_endpoint,
-                 const Lobby&                             lobby,
+  void joinLobby(const Lobby&                             lobby,
+                 const boost::asio::ip::udp::endpoint&    server,
                  const std::optional<socket_handle_type>& socket_handle);
 
   void unjoinLobby();

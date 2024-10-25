@@ -1,8 +1,7 @@
-#include "lobbies_popup.hpp"
+#include <ui/lobbies_popup.hpp>
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelInfoLayer.hpp>
 using namespace geode::prelude;
-#include <boost/asio.hpp>
 
 class $modify(GDMXEntry, LevelInfoLayer)
 {
@@ -24,7 +23,12 @@ class $modify(GDMXEntry, LevelInfoLayer)
     return true;
   }
 
-  void onGDMXSettings(CCObject*) { LobbiesPopup::create()->show(); }
+  void onGDMXSettings(CCObject*) 
+  {
+    auto* popup = LobbiesPopup::create();
+    popup->setID("lobbies-popup");
+    popup->show();
+  }
 
   CCPoint findGDMXPosition()
   {
