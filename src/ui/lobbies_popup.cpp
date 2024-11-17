@@ -30,8 +30,7 @@ LobbiesPopup* LobbiesPopup::create()
 bool LobbiesPopup::setup()
 {
   setTitle("GDMX Lobbies");
-  auto [width, height]      = m_mainLayer->getContentSize();
-  const auto buttons_height = 0.82f * height;
+  auto [width, height] = m_mainLayer->getContentSize();
 
   background =
       CCLayerColor::create({ .a = 75 }, 0.8f * width, (0.8f * height) - 25);
@@ -103,7 +102,7 @@ void LobbiesPopup::show()
     m_ZOrder = 105;
   m_scene->addChild(this);
   setOpacity(0);
-  runAction(CCFadeTo::create(0.14, opacity));
+  runAction(CCFadeTo::create(0.14f, opacity));
   setVisible(true);
 }
 
@@ -125,16 +124,9 @@ asio::awaitable<void> LobbiesPopup::refresh(CCPoint circle_pos)
   circle->m_sprite->setPosition(circle_pos);
   circle->show();
   bool circle_active = true;
+  bool added_joined  = false;
 
   std::vector<geode::Ref<LobbyCell>> cells;
-
-  if (auto lobby = ActiveLobby::get())
-  {
-    auto& cell = cells.emplace_back(
-        LobbyCell::create(lobby->data(), { bg_width, bg_height / 5 }, colored));
-    cell->markJoined(lobby->isHost());
-    colored = false;
-  }
 
   udp::socket   socket{ ctx, udp::v4() };
   udp::endpoint local_target{ asio::ip::address_v4::broadcast(),
@@ -150,7 +142,7 @@ asio::awaitable<void> LobbiesPopup::refresh(CCPoint circle_pos)
     co_await socket.async_send_to(buffer.data(), local_target);
   }
 
-  log::debug("listening for lobbies...");
+  output::debug("listening for lobbies...");
 
   const auto wait_start = std::chrono::steady_clock::now();
 
@@ -172,8 +164,29 @@ asio::awaitable<void> LobbiesPopup::refresh(CCPoint circle_pos)
     {
       if (!cells.empty())
       {
-        for (auto& cell : cells)
-          lobbies_list->m_contentLayer->addChild(cell);
+        if (auto* lobby = ActiveLobby::get())
+        {
+          for (auto& cell : cells)
+          {
+            if (cell->data().host_id == lobby->hostID())
+            {
+              if (added_joined)
+                continue;
+              cell->markJoined(lobby->isHost());
+              lobbies_list->m_contentLayer->addChild(cell, -1);
+              added_joined = true;
+              continue;
+            }
+
+            lobbies_list->m_contentLayer->addChild(cell);
+          }
+        }
+        else
+        {
+          for (auto& cell : cells)
+            lobbies_list->m_contentLayer->addChild(cell);
+        }
+
         lobbies_list->m_contentLayer->updateLayout();
         cells.clear();
       }
@@ -204,16 +217,10 @@ asio::awaitable<void> LobbiesPopup::refresh(CCPoint circle_pos)
     }
     catch (const boost::archive::archive_exception& exception)
     {
-      log::error("Archive Exception - {}", exception.what());
+      output::error("Archive Exception - {}", exception.what());
       if (type != RequestType::Empty)
-        log::error("Request was {}: {}", fmt::underlying(type), type);
+        output::error("Request was {}: {}", fmt::underlying(type), type);
       continue;
-    }
-
-    if (auto active_lobby = ActiveLobby::get())
-    {
-      if (active_lobby->hostID() == lobby.host_id)
-        continue;
     }
 
     cells.emplace_back(LobbyCell::create(std::move(lobby),
@@ -221,7 +228,7 @@ asio::awaitable<void> LobbiesPopup::refresh(CCPoint circle_pos)
     colored = !colored;
   }
 
-  log::debug("done listening for lobbies");
+  output::debug("done listening for lobbies");
 }
 
 void LobbiesPopup::onCreateLobby(CCObject*)

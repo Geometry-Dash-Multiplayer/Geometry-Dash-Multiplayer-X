@@ -1,5 +1,6 @@
 #include "gdmx_manager.hpp"
 #include "game_layer.hpp"
+#include <utils/logging.hpp>
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 using namespace geode::prelude;
@@ -26,6 +27,8 @@ void GDMXGameLayer::dispatch(EventType type, const EventValue& value)
     if (level_id && level_id != m_level->m_levelID)
       return;
     m_fields->players[player.id] = player;
+    output::debug("player with id {} just entered level with id {}", player.id,
+                  m_level->m_levelID.value());
     break;
   }
   case EventType::PlayerExitedLevel:
@@ -34,11 +37,12 @@ void GDMXGameLayer::dispatch(EventType type, const EventValue& value)
     if (level_id && level_id != m_level->m_levelID)
       return;
     m_fields->players.erase(id);
+    output::debug("player with id {} just exited level with id {}", id,
+                  m_level->m_levelID.value());
     break;
   }
   default:
-    geode::log::warn("GDMXGameLayer::dispatch: Unhandled Event - {}",
-                     to_string(type));
+    output::warn("Unhandled Event - {} ({})", type, fmt::underlying(type));
   }
 }
 

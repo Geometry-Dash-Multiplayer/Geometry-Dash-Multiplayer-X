@@ -240,8 +240,17 @@ asio::awaitable<void> LobbyCell::erase()
   GDMXManager::get().unjoinLobby();
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+  #pragma warning(push)
+  #pragma warning(disable : 4996)
+#endif
+
 asio::awaitable<void> LobbyCell::joinUnchecked()
 {
+  assert(lobby.type == LobbyType::Local);
   udp::endpoint target{ asio::ip::address_v4(lobby.host_id),
                         lookup_socket_port };
   udp::socket   socket{ ctx, udp::v4() };
@@ -300,7 +309,10 @@ asio::awaitable<void> LobbyCell::joinUnchecked()
         break;
       }
 
-      GDMXManager::get().joinLobby(lobby, sender, socket.release());
+      GDMXManager::get().joinLobby(
+          lobby,
+          udp::endpoint(asio::ip::address_v4(lobby.host_id), main_socket_port),
+          socket.release());
       markJoined(false);
     }
     catch (const boost::archive::archive_exception& exception)
@@ -310,14 +322,21 @@ asio::awaitable<void> LobbyCell::joinUnchecked()
                            "maybe try again later",
                            "OK")
           ->show();
-      log::error("Received Corrupted Response: {}", exception.what());
+      output::error("Received Corrupted Response: {}", exception.what());
     }
     break;
   }
 
   circle->removeFromParent();
   circle = nullptr;
+  join_button->setVisible(true);
 }
+
+#if defined(__GNUC__) || defined(__clang__)
+  #pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+  #pragma warning(pop)
+#endif
 
 void LobbyCell::onInfo(CCObject*)
 {

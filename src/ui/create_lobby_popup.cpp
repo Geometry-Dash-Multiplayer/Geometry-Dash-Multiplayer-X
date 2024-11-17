@@ -102,7 +102,8 @@ void CreateLobbyPopup::onSubmit(CCObject*)
   removeFromParent();
 
   auto* lobbies_popup =
-      static_cast<LobbiesPopup*>(CCScene::get()->getChildByID("lobbies-popup"));
+      static_cast<LobbiesPopup*>(CCScene::get()->getChildByID("gdmx-lobbies-popup"));
+  assert(lobbies_popup && "gdmx lobbies popup is missing");
   auto [bg_width, bg_height] = lobbies_popup->background->getContentSize();
   auto* cell =
       LobbyCell::create(ActiveLobby::get()->data(), { bg_width, bg_height / 5 },

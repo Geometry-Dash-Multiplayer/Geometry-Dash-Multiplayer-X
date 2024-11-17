@@ -4,26 +4,31 @@
 #include <Geode/utils/cocos.hpp>
 #include <boost/serialization/utility.hpp>
 #include <boost/serialization/optional.hpp>
+#include "sync.hpp"
 
-struct IconIDs
+class IconIDs
 {
+public:
   uint32_t cube = 0, ship = 0, ball = 0, ufo = 0, wave = 0, robot = 0,
            spider = 0, swing = 0;
 
   static IconIDs self();
 
-  template <typename archive>
-  void serialize(archive& arch, const unsigned int version)
+private:
+  void serialize(auto& arch, const unsigned int version)
   {
     arch & cube & ship & ball & ufo & wave & robot & spider & swing;
   }
+
+  friend class boost::serialization::access;
 };
 
 using ColorIDs = std::pair<uint32_t, uint32_t>;
 using GlowID   = std::optional<uint32_t>;
 
-struct GDMXPlayer
+class GDMXPlayer
 {
+public:
   uint64_t id = 0;
   IconIDs  icons{};
   ColorIDs colors{};
@@ -31,11 +36,13 @@ struct GDMXPlayer
 
   static GDMXPlayer self(bool local);
 
-  template <typename archive>
-  void serialize(archive& arch, const unsigned int version)
+private:
+  void serialize(auto& arch, const unsigned int version)
   {
     arch & id & icons & colors & glow;
   }
+
+  friend class boost::serialization::access;
 };
 
 class GDMXPlayerObject
@@ -73,6 +80,16 @@ public:
 
   void registerPlayer();
   void reset();
+  void setupPlayerStart();
+
+  void sync(const SyncData& info);
+
+  SyncData createSyncPoint() { return SyncData::from(player); }
+
+  void switchToFlyMode(GameObjectType type);
+  void switchToRollMode();
+  void switchToRobotMode();
+  void switchToSpiderMode();
 
 private:
   geode::Ref<PlayerObject> player;

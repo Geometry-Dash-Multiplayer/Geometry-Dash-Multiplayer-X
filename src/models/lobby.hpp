@@ -8,7 +8,7 @@
 #include <net/requests.hpp>
 #include "player.hpp"
 
-class BackgroundTasks;
+class RequestListener;
 
 namespace eos
 {
@@ -36,11 +36,7 @@ public:
   }
 
 private:
-  template <typename archive>
-  void serialize(archive& arch, const unsigned int version)
-  {
-    arch & name & type;
-  }
+  void serialize(auto& arch, const unsigned int version) { arch & name & type; }
 
   friend class boost::serialization::access;
 };
@@ -66,8 +62,7 @@ public:
 
 private:
   // clang-format off
-  template <typename archive>
-  void serialize(archive& arch, const unsigned int version)
+  void serialize(auto& arch, const unsigned int version)
   {
     arch & boost::serialization::base_object<PartialLobby>(*this);
     arch & host_id & player_count;
@@ -89,13 +84,12 @@ public:
 
   virtual void dispatch(eos::portable_iarchive& archive, RequestType type);
 
-  bool isHost();
-
   // events
   virtual void enteredLevel(uint32_t level_id) = 0;
   virtual void exitedLevel(uint32_t level_id)  = 0;
 
   // getters
+  virtual bool             isHost()      = 0;
   virtual uint64_t         hostID()      = 0;
   virtual std::string_view name()        = 0;
   virtual LobbyType        type()        = 0;
@@ -106,7 +100,7 @@ public:
 
 protected:
   using LobbyMainThread = geode::Task<bool, std::pair<EventType, EventValue>>;
-  using Listener        = geode::EventListener<LobbyMainThread>;
+  using ThreadListener  = geode::EventListener<LobbyMainThread>;
   using finish_callback = LobbyMainThread::PostResult;
   using report_callback = LobbyMainThread::PostProgress;
   using cancelled_callback = LobbyMainThread::HasBeenCancelled;
@@ -114,23 +108,25 @@ protected:
   using cancel_type        = LobbyMainThread::Cancel;
   using event_type         = LobbyMainThread::Event;
 
-  Listener         listener;
-  BackgroundTasks* ptasks = nullptr;
+  ThreadListener   thread_listener;
+  RequestListener* prequest_listener = nullptr;
+  report_callback  report;
 
   ActiveLobby()                              = default;
   ActiveLobby(const ActiveLobby&)            = delete;
   ActiveLobby& operator=(const ActiveLobby&) = delete;
 
   void spawnMainThread(const std::optional<socket_handle_type>& socket_handle);
+  virtual void spawnCoroutines() = 0;
 
   friend class GDMXManager;
-  friend class BackgroundTasks;
+  friend class RequestListener;
 };
 
 class HostedLobby : public ActiveLobby
 {
 public:
-  struct PlayerItem;
+  class PlayerItem;
 
   static HostedLobby* get()
   {
@@ -155,6 +151,8 @@ public:
 
   void playerExitedLevel(uint64_t id, uint32_t level_id);
 
+  bool isHost() override { return true; }
+
   uint64_t         hostID() override;
   std::string_view name() override;
   LobbyType        type() override;
@@ -171,10 +169,15 @@ private:
   PartialLobby lobby;
   player_map   players;
 
+  void spawnCoroutines() override;
+
+  coro<void> sendLevelPlayers(uint64_t target_id, uint32_t level_id,
+                              endpoint target);
   coro<void> reportPlayerEnteredLevel(GDMXPlayer player, uint32_t level_id);
   coro<void> reportPlayerExitedLevel(uint64_t id, uint32_t level_id);
+  coro<void> cleanup();
 
-  friend class BackgroundTasks;
+  friend class RequestListener;
 };
 
 class JoinedLobby : public ActiveLobby
@@ -198,6 +201,8 @@ public:
 
   void exitedLevel(uint32_t level_id) override;
 
+  bool isHost() override { return false; }
+
   uint64_t hostID() override { return lobby.host_id; }
 
   std::string_view name() override { return lobby.name; }
@@ -214,27 +219,27 @@ private:
   boost::asio::cancellation_signal enter_success;
   boost::asio::cancellation_signal exit_success;
 
+  void spawnCoroutines() override;
+
   coro<void> reportPlayerLevelChange(uint32_t level_id, bool enter);
   coro<void> keepAlive();
 
-  friend class BackgroundTasks;
+  friend class RequestListener;
 };
 
-struct HostedLobby::PlayerItem
+class HostedLobby::PlayerItem
 {
+public:
   GDMXPlayer                     player{};
   boost::asio::ip::udp::endpoint source;
   time_point                     last_update = std::chrono::steady_clock::now();
   uint32_t                       level_id    = 0;
 
-  template <typename archive>
-  void serialize(archive& arch, const unsigned int version)
-  {
-    arch & player;
-  }
+private:
+  void serialize(auto& arch, const unsigned int version) { arch & player; }
+
+  friend class boost::serialization::access;
 };
 
 BOOST_CLASS_IMPLEMENTATION(HostedLobby::PlayerItem,
                            boost::serialization::object_serializable);
-
-inline bool ActiveLobby::isHost() { return dynamic_cast<HostedLobby*>(this); }

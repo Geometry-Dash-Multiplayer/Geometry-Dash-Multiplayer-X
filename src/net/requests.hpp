@@ -38,6 +38,7 @@ inline const char* to_string(RequestType type)
   case RequestType::PlayerExitedLevel: return "Player Exited Level";
   case RequestType::PlayerEnterSuccessful: return "Player Enter Successful";
   case RequestType::PlayerExitSuccessful: return "Player Exit Successful";
+  case RequestType::ServerShutdown: return "Server Shutdown";
   default: return "Unknown";
   }
 }

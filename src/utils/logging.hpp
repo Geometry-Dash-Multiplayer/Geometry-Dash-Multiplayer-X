@@ -1,7 +1,7 @@
 #include <cassert>
 #include <Geode/loader/Log.hpp>
 
-namespace log
+namespace output
 {
   struct FmtStrWithLocation
   {

@@ -33,12 +33,17 @@ public:
     return nullptr;
   }
 
+  // for warnings
+  using cocos2d::CCNode::init;
+
   bool init(cocos2d::CCSize size, bool colored = false);
 
   void update(float delta) override;
 
   void markJoined(bool is_host);
   void markUnjoined();
+
+  const Lobby& data() { return lobby; }
 
 protected:
   boost::asio::io_context ctx;

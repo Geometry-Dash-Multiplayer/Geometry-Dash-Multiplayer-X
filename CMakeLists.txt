@@ -13,7 +13,7 @@ set(
 set(
     GDMX_HOOKS_PROJECT_FILES
     "game_layer"
-    "levelinfo"
+    "menu_layer"
     "player_object"
     "effect_manager"
 )
@@ -22,12 +22,13 @@ set(
     GDMX_MODELS_PROJECT_FILES
     "player"
     "lobby"
+    "sync"
 )
 
 set(
     GDMX_NET_PROJECT_FILES
     "requests"
-    "tasks"
+    "request_listener"
 )
 
 set(
@@ -85,11 +86,7 @@ CPMAddPackage(
 	DOWNLOAD_EXTRACT_TIMESTAMP ON
 )
 
-CPMAddPackage(
-    NAME eos_portable_archive
-    GIT_REPOSITORY https://github.com/AngelDev06/eos-portable-archive
-    GIT_TAG 432eeb1
-)
+CPMAddPackage("gh:AngelDev06/eos-portable-archive#73bf18f")
 
 set_target_properties(
     boost_serialization 
@@ -127,10 +124,17 @@ PRIVATE
     $<$<BOOL:${WIN32}>:_WIN32_WINNT=0x0601>
 )
 
+target_compile_options(
+    GDMX
+PRIVATE
+    $<$<BOOL:${MSVC}>:/W3>
+)
+
 target_precompile_headers(
     GDMX
 PRIVATE
     <boost/asio.hpp>
+    <boost/asio/experimental/awaitable_operators.hpp>
 )
 
 foreach (GROUP "Core" "Hooks" "Models" "Net" "UI" "Utils")
@@ -148,3 +152,19 @@ set_target_properties(
     boost_program_options
 PROPERTIES
     FOLDER "Dependencies")
+
+if (ANDROID)
+    find_program(ADB_CMD adb)
+    if (ADB_CMD)
+        add_custom_target(
+            GDMXDeploy ALL
+            "${ADB_CMD}" push
+                $<TARGET_FILE_DIR:GDMX>/angel.gdmx.geode
+                /storage/emulated/0/Android/media/com.geode.launcher/game/geode/mods/ ||
+            (echo Failed to push to device && exit 0)
+            VERBATIM USES_TERMINAL
+        )
+        add_dependencies(GDMXDeploy GDMX)
+        set_property(TARGET GDMXDeploy PROPERTY FOLDER "Dependencies")
+    endif()
+endif()

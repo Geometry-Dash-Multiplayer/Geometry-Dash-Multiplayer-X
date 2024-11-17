@@ -1,13 +1,20 @@
 #include "lobby.hpp"
 #include "gdmx_manager.hpp"
-#include <net/tasks.hpp>
+#include <boost/serialization/vector.hpp>
+#include <net/request_listener.hpp>
 #include <eos/portable_iarchive.hpp>
 #include <eos/portable_oarchive.hpp>
 #include <utils/logging.hpp>
 #include <hooks/game_layer.hpp>
-#include <boost/asio/experimental/parallel_group.hpp>
-#include <boost/asio/experimental/awaitable_operators.hpp>
 #include <ranges>
+#ifdef _MSC_VER
+  #pragma warning(push)
+  #pragma warning(disable : 4267)
+#endif
+#include <boost/asio/experimental/awaitable_operators.hpp>
+#ifdef _MSC_VER
+  #pragma warning(pop)
+#endif
 namespace asio = boost::asio;
 using asio::ip::udp;
 using namespace std::chrono_literals;
@@ -17,23 +24,20 @@ ActiveLobby* ActiveLobby::get() { return GDMXManager::get().getActiveLobby(); }
 
 void ActiveLobby::dispatch(eos::portable_iarchive& archive, RequestType type)
 {
-  switch (type)
-  {
-  default: log::warn("Unhandled Request - {}", to_string(type));
-  }
+  output::warn("Unhandled Request - {}", to_string(type));
 }
 
 ActiveLobby::~ActiveLobby()
 {
-  while (!ptasks)
+  while (!prequest_listener)
     std::this_thread::yield();
-  ptasks->ctx.stop();
+  prequest_listener->stop();
 }
 
 void ActiveLobby::spawnMainThread(
     const std::optional<socket_handle_type>& socket_handle)
 {
-  listener.bind(
+  thread_listener.bind(
       [](event_type* pevent)
       {
         if (!pevent->getProgress())
@@ -43,20 +47,22 @@ void ActiveLobby::spawnMainThread(
           game_layer->dispatch(type, data);
       });
 
-  listener.setFilter(LobbyMainThread::run(
+  thread_listener.setFilter(LobbyMainThread::run(
       [socket_handle](report_callback    report,
                       cancelled_callback cancelled) -> result_type
       {
-        BackgroundTasks tasks{ std::move(report), socket_handle };
+        RequestListener listener{ socket_handle };
         if (auto* lobby = ActiveLobby::get())
         {
-          lobby->ptasks = &tasks;
-          tasks.run();
+          lobby->prequest_listener = &listener;
+          lobby->report            = std::move(report);
+          lobby->spawnCoroutines();
+          listener.run();
         }
         else
           return false;
 
-        geode::log::debug("main lobby thread terminated");
+        output::debug("main lobby thread terminated");
         if (cancelled())
           return cancel_type{};
         return true;
@@ -73,6 +79,7 @@ void HostedLobby::dispatch(eos::portable_iarchive& archive, RequestType type)
     uint64_t id = 0;
     archive >> id;
     players.erase(id);
+    output::debug("player with id {} requested to unjoin", id);
     break;
   }
   case RequestType::RetainJoin:
@@ -110,14 +117,15 @@ void HostedLobby::dispatchLookup(eos::portable_iarchive& archive,
   case RequestType::FetchLobbies:
   {
     asio::co_spawn(
-        ptasks->ctx,
+        prequest_listener->ctx,
         [this, sender]() -> asio::awaitable<void>
         {
           asio::streambuf        buffer;
           eos::portable_oarchive archive{ buffer };
           archive << RequestType::SendLobby << data();
 
-          co_await ptasks->lookup_socket.async_send_to(buffer.data(), sender);
+          co_await prequest_listener->lookup_socket.async_send_to(buffer.data(),
+                                                                  sender);
         },
         asio::detached);
     break;
@@ -128,28 +136,30 @@ void HostedLobby::dispatchLookup(eos::portable_iarchive& archive,
     archive >> player;
     players[player.id] = { player, sender };
     asio::co_spawn(
-        ptasks->ctx,
+        prequest_listener->ctx,
         [this, sender]() -> asio::awaitable<void>
         {
           asio::streambuf        buffer;
           eos::portable_oarchive archive{ buffer };
           archive << RequestType::JoinSuccessful;
 
-          co_await ptasks->lookup_socket.async_send_to(buffer.data(), sender);
+          co_await prequest_listener->lookup_socket.async_send_to(buffer.data(),
+                                                                  sender);
         },
         asio::detached);
+    output::debug("player with id {} requested to join, reporting back...",
+                  player.id);
     break;
   }
   default:
-    geode::log::warn("HostedLobby::dispatchLookup: Unhandled Request - {}",
-                     to_string(type));
+    output::warn("Unhandled Request - {} ({})", type, fmt::underlying(type));
   }
 }
 
 void HostedLobby::enteredLevel(uint32_t level_id)
 {
   asio::co_spawn(
-      ptasks->ctx,
+      prequest_listener->ctx,
       reportPlayerEnteredLevel(GDMXPlayer::self(lobby.type == LobbyType::Local),
                                level_id),
       asio::detached);
@@ -158,7 +168,7 @@ void HostedLobby::enteredLevel(uint32_t level_id)
 void HostedLobby::exitedLevel(uint32_t level_id)
 {
   asio::co_spawn(
-      ptasks->ctx,
+      prequest_listener->ctx,
       reportPlayerExitedLevel(
           GDMXManager::get().getID(lobby.type == LobbyType::Local), level_id),
       asio::detached);
@@ -170,25 +180,17 @@ void HostedLobby::playerEnteredLevel(uint64_t id, uint32_t level_id)
   if (item == players.end())
     return;
   item->second.last_update = std::chrono::steady_clock::now();
-  asio::co_spawn(
-      ptasks->ctx,
-      [this, target = item->second.source]() -> asio::awaitable<void>
-      {
-        asio::streambuf        buffer;
-        eos::portable_oarchive archive{ buffer };
-        archive << RequestType::PlayerEnterSuccessful;
-
-        co_await ptasks->socket.async_send_to(buffer.data(), target);
-      },
-      asio::detached);
+  asio::co_spawn(prequest_listener->ctx,
+                 sendLevelPlayers(id, level_id, item->second.source),
+                 asio::detached);
   if (item->second.level_id == level_id)
     return;
   item->second.level_id = level_id;
-  asio::co_spawn(ptasks->ctx,
+  asio::co_spawn(prequest_listener->ctx,
                  reportPlayerEnteredLevel(item->second.player, level_id),
                  asio::detached);
-  ptasks->report({ EventType::PlayerEnteredLevel,
-                   std::pair(item->second.player, level_id) });
+  report({ EventType::PlayerEnteredLevel,
+           std::pair(item->second.player, level_id) });
 }
 
 void HostedLobby::playerExitedLevel(uint64_t id, uint32_t level_id)
@@ -198,22 +200,22 @@ void HostedLobby::playerExitedLevel(uint64_t id, uint32_t level_id)
     return;
   item->second.last_update = std::chrono::steady_clock::now();
   asio::co_spawn(
-      ptasks->ctx,
+      prequest_listener->ctx,
       [this, target = item->second.source]() -> asio::awaitable<void>
       {
         asio::streambuf        buffer;
         eos::portable_oarchive archive{ buffer };
         archive << RequestType::PlayerExitSuccessful;
 
-        co_await ptasks->socket.async_send_to(buffer.data(), target);
+        co_await prequest_listener->socket.async_send_to(buffer.data(), target);
       },
       asio::detached);
   if (item->second.level_id != level_id)
     return;
   item->second.level_id = 0;
-  asio::co_spawn(ptasks->ctx, reportPlayerExitedLevel(id, level_id),
+  asio::co_spawn(prequest_listener->ctx, reportPlayerExitedLevel(id, level_id),
                  asio::detached);
-  ptasks->report({ EventType::PlayerExitedLevel, std::pair(id, level_id) });
+  report({ EventType::PlayerExitedLevel, std::pair(id, level_id) });
 }
 
 uint64_t HostedLobby::hostID()
@@ -225,7 +227,16 @@ std::string_view HostedLobby::name() { return lobby.name; }
 
 LobbyType HostedLobby::type() { return lobby.type; }
 
+#ifdef _MSC_VER
+  #pragma warning(push)
+  #pragma warning(disable : 4267)
+#endif
+
 uint32_t HostedLobby::playerCount() { return players.size(); }
+
+#ifdef _MSC_VER
+  #pragma warning(pop)
+#endif
 
 using send_operation = decltype(std::declval<udp::socket>().async_send_to(
     std::declval<asio::streambuf>().data(), std::declval<udp::endpoint>()));
@@ -247,6 +258,37 @@ asio::awaitable<void> HostedLobby::reportShutdown(udp::socket& socket)
 
   co_await asio::experimental::make_parallel_group(operations)
       .async_wait(asio::experimental::wait_for_all(), asio::deferred);
+
+  output::debug("reported shutdown to a total of {} clients",
+                operations.size());
+}
+
+void HostedLobby::spawnCoroutines()
+{
+  asio::co_spawn(prequest_listener->ctx, cleanup(), asio::detached);
+}
+
+asio::awaitable<void> HostedLobby::sendLevelPlayers(uint64_t      target_id,
+                                                    uint32_t      level_id,
+                                                    udp::endpoint target)
+{
+  std::vector<GDMXPlayer> level_players;
+  level_players.reserve(players.size());
+
+  for (PlayerItem& item : players |
+                              std::views::filter(
+                                  [target_id, level_id](auto& item) {
+                                    return item.second.level_id == level_id &&
+                                           item.first != target_id;
+                                  }) |
+                              std::views::values)
+    level_players.push_back(item.player);
+
+  asio::streambuf        buffer;
+  eos::portable_oarchive archive{ buffer };
+  archive << RequestType::PlayerEnterSuccessful << level_players;
+
+  co_await prequest_listener->socket.async_send_to(buffer.data(), target);
 }
 
 asio::awaitable<void> HostedLobby::reportPlayerEnteredLevel(GDMXPlayer player,
@@ -274,7 +316,7 @@ asio::awaitable<void> HostedLobby::reportPlayerEnteredLevel(GDMXPlayer player,
                                         }) |
                                     std::views::values)
     operations.push_back(
-        ptasks->socket.async_send_to(buffer.data(), item.source));
+        prequest_listener->socket.async_send_to(buffer.data(), item.source));
 
   co_await asio::experimental::make_parallel_group(operations)
       .async_wait(asio::experimental::wait_for_all(), asio::deferred);
@@ -302,10 +344,36 @@ asio::awaitable<void> HostedLobby::reportPlayerExitedLevel(uint64_t id,
                               { return item.second.level_id == level_id; }) |
            std::views::values)
     operations.push_back(
-        ptasks->socket.async_send_to(buffer.data(), item.source));
+        prequest_listener->socket.async_send_to(buffer.data(), item.source));
 
   co_await asio::experimental::make_parallel_group(operations)
       .async_wait(asio::experimental::wait_for_all(), asio::deferred);
+}
+
+asio::awaitable<void> HostedLobby::cleanup()
+{
+  while (true)
+  {
+    co_await asio::steady_timer(prequest_listener->ctx, 5s).async_wait();
+    const auto current_time = std::chrono::steady_clock::now();
+
+    for (auto itr = players.begin(); itr != players.end();)
+    {
+      auto& [id, item] = *itr;
+      if ((current_time - item.last_update) < 5s)
+      {
+        ++itr;
+        continue;
+      }
+
+      if (item.level_id)
+        playerExitedLevel(id, item.level_id);
+      itr = players.erase(itr);
+      output::debug("player with id {} was automatically removed from the "
+                    "lobby due to being afk for too long",
+                    id);
+    }
+  }
 }
 
 void JoinedLobby::dispatch(eos::portable_iarchive& archive, RequestType type)
@@ -316,24 +384,32 @@ void JoinedLobby::dispatch(eos::portable_iarchive& archive, RequestType type)
   {
     GDMXPlayer player{};
     archive >> player;
-    ptasks->report({ EventType::PlayerEnteredLevel, std::pair(player, 0) });
+    report({ EventType::PlayerEnteredLevel, std::pair(player, 0) });
     break;
   }
   case RequestType::PlayerExitedLevel:
   {
     uint64_t id = 0;
     archive >> id;
-    ptasks->report({ EventType::PlayerExitedLevel, std::pair(id, 0) });
+    report({ EventType::PlayerExitedLevel, std::pair(id, 0) });
     break;
   }
   case RequestType::PlayerEnterSuccessful:
   {
     enter_success.emit(asio::cancellation_type::all);
+    output::debug("entering level was reported successfully");
     break;
   }
   case RequestType::PlayerExitSuccessful:
   {
     exit_success.emit(asio::cancellation_type::all);
+    output::debug("exiting level was reported successfully");
+    break;
+  }
+  case RequestType::ServerShutdown:
+  {
+    output::debug("received server shutdown request, unjoining lobby...");
+    GDMXManager::get().unjoinLobby();
     break;
   }
   default: ActiveLobby::dispatch(archive, type);
@@ -343,15 +419,20 @@ void JoinedLobby::dispatch(eos::portable_iarchive& archive, RequestType type)
 void JoinedLobby::enteredLevel(uint32_t level_id)
 {
   asio::co_spawn(
-      ptasks->ctx, reportPlayerLevelChange(level_id, true),
+      prequest_listener->ctx, reportPlayerLevelChange(level_id, true),
       asio::bind_cancellation_slot(enter_success.slot(), asio::detached));
 }
 
 void JoinedLobby::exitedLevel(uint32_t level_id)
 {
   asio::co_spawn(
-      ptasks->ctx, reportPlayerLevelChange(level_id, false),
+      prequest_listener->ctx, reportPlayerLevelChange(level_id, false),
       asio::bind_cancellation_slot(exit_success.slot(), asio::detached));
+}
+
+void JoinedLobby::spawnCoroutines()
+{
+  asio::co_spawn(prequest_listener->ctx, keepAlive(), asio::detached);
 }
 
 asio::awaitable<void> JoinedLobby::reportPlayerLevelChange(uint32_t level_id,
@@ -365,21 +446,22 @@ asio::awaitable<void> JoinedLobby::reportPlayerLevelChange(uint32_t level_id,
           << level_id;
 
   while (true)
-    co_await (
-        ptasks->socket.async_send_to(buffer.data(), server,
-                                     asio::use_awaitable) &&
-        asio::steady_timer(ptasks->ctx, 250ms).async_wait(asio::use_awaitable));
+    co_await (prequest_listener->socket.async_send_to(buffer.data(), server,
+                                                      asio::use_awaitable) &&
+              asio::steady_timer(prequest_listener->ctx, 250ms)
+                  .async_wait(asio::use_awaitable));
 }
 
 asio::awaitable<void> JoinedLobby::keepAlive()
 {
   asio::streambuf        buffer;
   eos::portable_oarchive archive{ buffer };
-  archive << RequestType::RetainJoin;
+  archive << RequestType::RetainJoin
+          << GDMXManager::get().getID(lobby.type == LobbyType::Local);
 
   while (true)
-    co_await (
-        ptasks->socket.async_send_to(buffer.data(), server,
-                                     asio::use_awaitable) &&
-        asio::steady_timer(ptasks->ctx, 500ms).async_wait(asio::use_awaitable));
+    co_await (prequest_listener->socket.async_send_to(buffer.data(), server,
+                                                      asio::use_awaitable) &&
+              asio::steady_timer(prequest_listener->ctx, 500ms)
+                  .async_wait(asio::use_awaitable));
 }
