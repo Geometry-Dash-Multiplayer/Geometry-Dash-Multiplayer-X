@@ -2,9 +2,9 @@
 #include "lobby_cell.hpp"
 #include "create_lobby_popup.hpp"
 #include "gdmx_manager.hpp"
+#include <net/request.hpp>
 #include <utils/logging.hpp>
 #include <eos/portable_iarchive.hpp>
-#include <eos/portable_oarchive.hpp>
 #include <boost/asio/experimental/awaitable_operators.hpp>
 #include <variant>
 #include <Geode/Geode.hpp>
@@ -135,11 +135,8 @@ asio::awaitable<void> LobbiesPopup::refresh(CCPoint circle_pos)
   socket.set_option(asio::socket_base::broadcast(true));
 
   {
-    asio::streambuf        buffer;
-    eos::portable_oarchive archive{ buffer };
-    archive << RequestType::FetchLobbies;
-
-    co_await socket.async_send_to(buffer.data(), local_target);
+    Request request{ socket, RequestType::FetchLobbies };
+    co_await request.send_to(local_target);
   }
 
   output::debug("listening for lobbies...");

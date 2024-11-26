@@ -4,6 +4,7 @@
 #include <variant>
 
 class GDMXPlayer;
+class SyncData;
 
 enum class RequestType : uint32_t
 {
@@ -18,6 +19,7 @@ enum class RequestType : uint32_t
   PlayerExitedLevel,
   PlayerEnterSuccessful,
   PlayerExitSuccessful,
+  PlayerSync,
   ServerShutdown,
   PlayerAdd    = JoinLobby,
   PlayerRemove = UnjoinLobby
@@ -38,6 +40,7 @@ inline const char* to_string(RequestType type)
   case RequestType::PlayerExitedLevel: return "Player Exited Level";
   case RequestType::PlayerEnterSuccessful: return "Player Enter Successful";
   case RequestType::PlayerExitSuccessful: return "Player Exit Successful";
+  case RequestType::PlayerSync: return "Player Sync";
   case RequestType::ServerShutdown: return "Server Shutdown";
   default: return "Unknown";
   }
@@ -48,7 +51,8 @@ inline auto format_as(RequestType type) { return to_string(type); }
 enum class EventType : uint32_t
 {
   PlayerEnteredLevel,
-  PlayerExitedLevel
+  PlayerExitedLevel,
+  PlayerSync
 };
 
 inline const char* to_string(EventType type)
@@ -57,6 +61,7 @@ inline const char* to_string(EventType type)
   {
   case EventType::PlayerEnteredLevel: return "Player Entered Level";
   case EventType::PlayerExitedLevel: return "Player Exited Level";
+  case EventType::PlayerSync: return "Player Sync";
   default: return "Unknown";
   }
 }
@@ -65,8 +70,9 @@ inline auto format_as(EventType type) { return to_string(type); }
 
 using PlayerEnteredLevelValue = std::pair<GDMXPlayer, uint32_t>;
 using PlayerExitedLevelValue  = std::pair<uint64_t, uint32_t>;
-using EventValue =
-    std::variant<PlayerEnteredLevelValue, PlayerExitedLevelValue>;
+using PlayerSyncValue         = std::pair<uint64_t, SyncData>;
+using EventValue = std::variant<PlayerEnteredLevelValue, PlayerExitedLevelValue,
+                                PlayerSyncValue>;
 
 inline constexpr size_t lookup_socket_port = 55989;
 inline constexpr size_t main_socket_port   = 55898;

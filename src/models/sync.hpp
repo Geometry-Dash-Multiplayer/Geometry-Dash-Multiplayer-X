@@ -5,6 +5,7 @@
 #include <vector>
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/vector.hpp>
+#include <serialization/cocos2d.hpp>
 
 class SyncFlags
 {

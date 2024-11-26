@@ -1,8 +1,7 @@
 #include "lobby_cell.hpp"
 #include "gdmx_manager.hpp"
 #include <eos/portable_iarchive.hpp>
-#include <eos/portable_oarchive.hpp>
-#include <net/requests.hpp>
+#include <net/request.hpp>
 #include <utils/logging.hpp>
 #include <boost/asio/experimental/awaitable_operators.hpp>
 #include <Geode/Geode.hpp>
@@ -219,13 +218,9 @@ asio::awaitable<void> LobbyCell::unjoin()
   udp::endpoint target{ asio::ip::address_v4(lobby.host_id), main_socket_port };
   udp::socket   socket{ ctx, udp::v4() };
 
-  asio::streambuf        buffer;
-  eos::portable_oarchive archive{ buffer };
-
-  archive << RequestType::UnjoinLobby
-          << GDMXManager::get().getID(lobby.type == LobbyType::Local);
-
-  co_await socket.async_send_to(buffer.data(), target);
+  Request       request{ socket, RequestType::UnjoinLobby };
+  request << GDMXManager::get().getID(lobby.type == LobbyType::Local);
+  co_await request.send_to(target);
 }
 
 asio::awaitable<void> LobbyCell::erase()
@@ -256,13 +251,9 @@ asio::awaitable<void> LobbyCell::joinUnchecked()
   udp::socket   socket{ ctx, udp::v4() };
 
   {
-    asio::streambuf        buffer;
-    eos::portable_oarchive archive{ buffer };
-
-    archive << RequestType::JoinLobby
-            << GDMXPlayer::self(lobby.type == LobbyType::Local);
-
-    co_await socket.async_send_to(buffer.data(), target);
+    Request request{ socket, RequestType::JoinLobby };
+    request << GDMXPlayer::self(lobby.type == LobbyType::Local);
+    co_await request.send_to(target);
   }
 
   while (true)

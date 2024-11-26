@@ -3,7 +3,8 @@
 #include <utils/logging.hpp>
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
-using namespace geode::prelude;
+using namespace cocos2d;
+using namespace std::chrono_literals;
 
 int GDMXGameLayer::checkCollisions(PlayerObject* player, float delta, bool flag)
 {
@@ -16,6 +17,23 @@ int GDMXGameLayer::checkCollisions(PlayerObject* player, float delta, bool flag)
 }
 
 void GDMXGameLayer::resetPlayer() { GJBaseGameLayer::resetPlayer(); }
+
+void GDMXGameLayer::update(float delta)
+{
+  GJBaseGameLayer::update(delta);
+
+  if (auto* lobby = ActiveLobby::get())
+  {
+    using std::chrono::steady_clock;
+    if (m_fields->last_synced == steady_clock::time_point::min())
+      m_fields->last_synced = steady_clock::now();
+    else if ((m_fields->last_synced - steady_clock::now()) > 5s)
+    {
+      lobby->syncAcross(SyncData::from(m_player1));
+      m_fields->last_synced = steady_clock::now();
+    }
+  }
+}
 
 void GDMXGameLayer::dispatch(EventType type, const EventValue& value)
 {
@@ -39,6 +57,16 @@ void GDMXGameLayer::dispatch(EventType type, const EventValue& value)
     m_fields->players.erase(id);
     output::debug("player with id {} just exited level with id {}", id,
                   m_level->m_levelID.value());
+    break;
+  }
+  case EventType::PlayerSync:
+  {
+    auto& [id, info] = std::get<PlayerSyncValue>(value);
+    auto item        = m_fields->players.find(id);
+    if (item == m_fields->players.end())
+      break;
+    item->second.sync(info);
+    output::debug("player with id {} synced", id);
     break;
   }
   default:

@@ -1,5 +1,6 @@
 #pragma once
-#include <models/lobby.hpp>
+#include <boost/asio.hpp>
+#include <optional>
 
 class RequestListener
 {

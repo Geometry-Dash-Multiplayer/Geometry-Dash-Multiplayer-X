@@ -1,19 +1,21 @@
 #pragma once
+#include <ranges>
 #include <memory>
+#include <boost/asio.hpp>
+#include <boost/asio/experimental/parallel_group.hpp>
 #include <boost/serialization/string.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
-#include <boost/asio.hpp>
 #include <Geode/utils/Task.hpp>
 #include <Geode/loader/Event.hpp>
-#include <net/requests.hpp>
+#include <net/request.hpp>
 #include "player.hpp"
-
-class RequestListener;
 
 namespace eos
 {
   class portable_iarchive;
 }
+
+class RequestListener;
 
 enum class LobbyType : uint8_t
 {
@@ -85,8 +87,9 @@ public:
   virtual void dispatch(eos::portable_iarchive& archive, RequestType type);
 
   // events
-  virtual void enteredLevel(uint32_t level_id) = 0;
-  virtual void exitedLevel(uint32_t level_id)  = 0;
+  virtual void enteredLevel(uint32_t level_id)  = 0;
+  virtual void exitedLevel(uint32_t level_id)   = 0;
+  virtual void syncAcross(const SyncData& info) = 0;
 
   // getters
   virtual bool             isHost()      = 0;
@@ -147,9 +150,13 @@ public:
 
   void exitedLevel(uint32_t level_id) override;
 
+  void syncAcross(const SyncData& info) override;
+
   void playerEnteredLevel(uint64_t id, uint32_t level_id);
 
   void playerExitedLevel(uint64_t id, uint32_t level_id);
+
+  void playerSyncAcross(uint64_t id, const SyncData& info);
 
   bool isHost() override { return true; }
 
@@ -171,10 +178,13 @@ private:
 
   void spawnCoroutines() override;
 
+  coro<void> reportTo(Request& request, std::ranges::range auto&& range);
   coro<void> sendLevelPlayers(uint64_t target_id, uint32_t level_id,
                               endpoint target);
   coro<void> reportPlayerEnteredLevel(GDMXPlayer player, uint32_t level_id);
   coro<void> reportPlayerExitedLevel(uint64_t id, uint32_t level_id);
+  coro<void> reportPlayerSyncAcross(uint64_t id, uint32_t level_id,
+                                    SyncData sync_info);
   coro<void> cleanup();
 
   friend class RequestListener;
@@ -200,6 +210,8 @@ public:
   void enteredLevel(uint32_t level_id) override;
 
   void exitedLevel(uint32_t level_id) override;
+
+  void syncAcross(const SyncData& info) override;
 
   bool isHost() override { return false; }
 
@@ -243,3 +255,18 @@ private:
 
 BOOST_CLASS_IMPLEMENTATION(HostedLobby::PlayerItem,
                            boost::serialization::object_serializable);
+
+boost::asio::awaitable<void>
+    HostedLobby::reportTo(Request& request, std::ranges::range auto&& range)
+{
+  using send_operation = decltype(request.send_to(std::declval<endpoint>()));
+  std::vector<send_operation> operations;
+  operations.reserve(players.size());
+
+  for (const PlayerItem& item : range | std::views::values)
+    operations.push_back(request.send_to(item.source));
+
+  co_await boost::asio::experimental::make_parallel_group(operations)
+      .async_wait(boost::asio::experimental::wait_for_all(),
+                  boost::asio::deferred);
+}

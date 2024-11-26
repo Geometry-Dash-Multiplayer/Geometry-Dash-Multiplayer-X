@@ -27,8 +27,9 @@ set(
 
 set(
     GDMX_NET_PROJECT_FILES
-    "requests"
-    "request_listener"
+    "constants"
+    "listener"
+    "request"
 )
 
 set(
@@ -46,7 +47,12 @@ set(
     "logging"
 )
 
-foreach (DIR "core" "hooks" "models" "net" "ui" "utils")
+set(
+    GDMX_SERIALIZATION_PROJECT_FILES
+    "cocos2d"
+)
+
+foreach (DIR "core" "hooks" "models" "net" "ui" "utils" "serialization")
     string(TOUPPER ${DIR} DIR_UPPER)
     set(PROJECT_FILES_VAR "GDMX_${DIR_UPPER}_PROJECT_FILES")
     foreach (SRC IN LISTS ${PROJECT_FILES_VAR})
@@ -137,7 +143,7 @@ PRIVATE
     <boost/asio/experimental/awaitable_operators.hpp>
 )
 
-foreach (GROUP "Core" "Hooks" "Models" "Net" "UI" "Utils")
+foreach (GROUP "Core" "Hooks" "Models" "Net" "UI" "Utils" "Serialization")
     string(TOUPPER ${GROUP} GROUP_UPPER)
     set(HEADERS_LIST_VAR "GDMX_${GROUP_UPPER}_HEADERS")
     set(SOURCES_LIST_VAR "GDMX_${GROUP_UPPER}_SOURCES")
