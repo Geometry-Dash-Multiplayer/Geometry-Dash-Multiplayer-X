@@ -45,6 +45,8 @@ void GDMXGameLayer::dispatch(EventType type, const EventValue& value)
     if (level_id && level_id != m_level->m_levelID)
       return;
     m_fields->players[player.id] = player;
+    if (auto* lobby = ActiveLobby::get())
+      lobby->syncAcross(SyncData::from(m_player1));
     output::debug("player with id {} just entered level with id {}", player.id,
                   m_level->m_levelID.value());
     break;
@@ -69,6 +71,19 @@ void GDMXGameLayer::dispatch(EventType type, const EventValue& value)
     output::debug("player with id {} synced", id);
     break;
   }
+  case EventType::LevelPlayersList:
+  {
+    auto& players = std::get<LevelPlayersListValue>(value);
+    m_fields->players.reserve(players.size());
+
+    for (const GDMXPlayer& player : players)
+      m_fields->players[player.id] = player;
+
+    output::debug("a total of {} where registered to the in-level players list "
+                  "after successfully entering the level",
+                  players.size());
+    break;
+  }
   default:
     output::warn("Unhandled Event - {} ({})", type, fmt::underlying(type));
   }
@@ -90,7 +105,7 @@ class $modify(PlayLayer)
   {
     PlayLayer::onQuit();
     if (auto* lobby = ActiveLobby::get())
-      lobby->exitedLevel(m_level->m_levelID);
+      lobby->exitedLevel();
   }
 
   $override void destroyPlayer(PlayerObject* player, GameObject* obj)

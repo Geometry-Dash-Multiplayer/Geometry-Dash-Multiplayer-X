@@ -24,9 +24,9 @@ bool LobbyCell::init(CCSize size, bool colored)
 
   setContentSize({ width, height + 2.2f });
   setAnchorPoint({});
-  setLayout(ColumnLayout::create()
+  setLayout(geode::ColumnLayout::create()
                 ->setAxisReverse(true)
-                ->setAxisAlignment(AxisAlignment::End)
+                ->setAxisAlignment(geode::AxisAlignment::End)
                 ->setGap(0));
 
   cell_main_layer = CCNode::create();
@@ -44,8 +44,8 @@ bool LobbyCell::init(CCSize size, bool colored)
   cell_items->setAnchorPoint({ 0, 0.5f });
   cell_items->setPosition({ width / 32, height / 2 });
   cell_items->setContentWidth(width * 0.6f);
-  cell_items->setLayout(RowLayout::create()
-                            ->setAxisAlignment(AxisAlignment::Start)
+  cell_items->setLayout(geode::RowLayout::create()
+                            ->setAxisAlignment(geode::AxisAlignment::Start)
                             ->setGap(5)
                             ->setAutoScale(false));
   cell_items->setID("cell-items");
@@ -71,8 +71,8 @@ bool LobbyCell::init(CCSize size, bool colored)
       { name->getContentWidth(), name->getContentHeight() * 0.85f });
   name_wrapper->setScale(0.4f);
   name_wrapper->setLayoutOptions(
-      AxisLayoutOptions::create()->setAutoScale(true)->setScaleLimits(0.3f,
-                                                                      0.5f));
+      geode::AxisLayoutOptions::create()->setAutoScale(true)->setScaleLimits(
+          0.3f, 0.5f));
   name_wrapper->setID("name-wrapper");
   name_wrapper->addChild(name);
   cell_items->addChild(name_wrapper);
@@ -218,7 +218,7 @@ asio::awaitable<void> LobbyCell::unjoin()
   udp::endpoint target{ asio::ip::address_v4(lobby.host_id), main_socket_port };
   udp::socket   socket{ ctx, udp::v4() };
 
-  Request       request{ socket, RequestType::UnjoinLobby };
+  Request request{ socket, RequestType::UnjoinLobby };
   request << GDMXManager::get().getID(lobby.type == LobbyType::Local);
   co_await request.send_to(target);
 }

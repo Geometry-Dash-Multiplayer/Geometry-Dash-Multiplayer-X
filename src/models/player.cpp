@@ -123,7 +123,7 @@ void GDMXPlayerObject::setupPlayerStart()
   case 7: game_layer->switchToFlyMode(player, nullptr, true, 41); break;
   }
 
-  static const std::array speed_map = { 0.9f, 0.7f, 1.1f, 1.3f, 1.6f };
+  static constexpr std::array speed_map = { 0.9f, 0.7f, 1.1f, 1.3f, 1.6f };
   player->updateTimeMod(speed_map[fmt::underlying(settings->m_startSpeed)],
                         false);
 }

@@ -162,20 +162,26 @@ void HostedLobby::dispatchLookup(eos::portable_iarchive& archive,
 
 void HostedLobby::enteredLevel(uint32_t level_id)
 {
+  assert(!joined_level &&
+         "received entered level event with a level already registered");
   asio::co_spawn(
       prequest_listener->ctx,
       reportPlayerEnteredLevel(GDMXPlayer::self(lobby.type == LobbyType::Local),
                                level_id),
       asio::detached);
+  joined_level = level_id;
 }
 
-void HostedLobby::exitedLevel(uint32_t level_id)
+void HostedLobby::exitedLevel()
 {
-  asio::co_spawn(
-      prequest_listener->ctx,
-      reportPlayerExitedLevel(
-          GDMXManager::get().getID(lobby.type == LobbyType::Local), level_id),
-      asio::detached);
+  assert(joined_level &&
+         "received exited level event without the level registered");
+  asio::co_spawn(prequest_listener->ctx,
+                 reportPlayerExitedLevel(
+                     GDMXManager::get().getID(lobby.type == LobbyType::Local),
+                     joined_level),
+                 asio::detached);
+  joined_level = 0;
 }
 
 void HostedLobby::syncAcross(const SyncData& info)
@@ -183,7 +189,7 @@ void HostedLobby::syncAcross(const SyncData& info)
   asio::co_spawn(prequest_listener->ctx,
                  reportPlayerSyncAcross(
                      GDMXManager::get().getID(lobby.type == LobbyType::Local),
-                     GJBaseGameLayer::get()->m_level->m_levelID, info),
+                     joined_level, info),
                  asio::detached);
 }
 
@@ -282,7 +288,7 @@ asio::awaitable<void> HostedLobby::sendLevelPlayers(uint64_t      target_id,
                                                     udp::endpoint target)
 {
   std::vector<GDMXPlayer> level_players;
-  level_players.reserve(players.size());
+  level_players.reserve(players.size() + 1);
 
   for (PlayerItem& item : players |
                               std::views::filter(
@@ -292,6 +298,9 @@ asio::awaitable<void> HostedLobby::sendLevelPlayers(uint64_t      target_id,
                                   }) |
                               std::views::values)
     level_players.push_back(item.player);
+
+  if (joined_level == level_id)
+    level_players.push_back(GDMXPlayer::self(lobby.type == LobbyType::Local));
 
   Request request{ prequest_listener->socket,
                    RequestType::PlayerEnterSuccessful };
@@ -394,6 +403,9 @@ void JoinedLobby::dispatch(eos::portable_iarchive& archive, RequestType type)
   }
   case RequestType::PlayerEnterSuccessful:
   {
+    std::vector<GDMXPlayer> players;
+    archive >> players;
+    report({ EventType::LevelPlayersList, std::move(players) });
     enter_success.emit(asio::cancellation_type::all);
     output::debug("entering level was reported successfully");
     break;
@@ -424,16 +436,22 @@ void JoinedLobby::dispatch(eos::portable_iarchive& archive, RequestType type)
 
 void JoinedLobby::enteredLevel(uint32_t level_id)
 {
+  assert(!joined_level &&
+         "received entered level event with a level already registered");
   asio::co_spawn(
       prequest_listener->ctx, reportPlayerLevelChange(level_id, true),
       asio::bind_cancellation_slot(enter_success.slot(), asio::detached));
+  joined_level = level_id;
 }
 
-void JoinedLobby::exitedLevel(uint32_t level_id)
+void JoinedLobby::exitedLevel()
 {
+  assert(joined_level &&
+         "received exited level event without the level registered");
   asio::co_spawn(
-      prequest_listener->ctx, reportPlayerLevelChange(level_id, false),
+      prequest_listener->ctx, reportPlayerLevelChange(joined_level, false),
       asio::bind_cancellation_slot(exit_success.slot(), asio::detached));
+  joined_level = 0;
 }
 
 void JoinedLobby::syncAcross(const SyncData& info)

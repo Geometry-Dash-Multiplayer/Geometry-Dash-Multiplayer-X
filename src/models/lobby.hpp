@@ -88,7 +88,7 @@ public:
 
   // events
   virtual void enteredLevel(uint32_t level_id)  = 0;
-  virtual void exitedLevel(uint32_t level_id)   = 0;
+  virtual void exitedLevel()                    = 0;
   virtual void syncAcross(const SyncData& info) = 0;
 
   // getters
@@ -114,6 +114,7 @@ protected:
   ThreadListener   thread_listener;
   RequestListener* prequest_listener = nullptr;
   report_callback  report;
+  uint32_t         joined_level = 0;
 
   ActiveLobby()                              = default;
   ActiveLobby(const ActiveLobby&)            = delete;
@@ -148,10 +149,18 @@ public:
 
   void enteredLevel(uint32_t level_id) override;
 
-  void exitedLevel(uint32_t level_id) override;
+  void exitedLevel() override;
 
   void syncAcross(const SyncData& info) override;
 
+  /**
+   * On player enter request the host will immediately respond back with a list
+   * of GDMXPlayer objects along with a confirmation which the client expects.
+   * Afterwards the enter request will be forwarded to all the rest of the
+   * clients that are already in the level forcing them to sync using the
+   * typical sync api.
+   * Note that the host will also sync.
+   */
   void playerEnteredLevel(uint64_t id, uint32_t level_id);
 
   void playerExitedLevel(uint64_t id, uint32_t level_id);
@@ -209,7 +218,7 @@ public:
 
   void enteredLevel(uint32_t level_id) override;
 
-  void exitedLevel(uint32_t level_id) override;
+  void exitedLevel() override;
 
   void syncAcross(const SyncData& info) override;
 

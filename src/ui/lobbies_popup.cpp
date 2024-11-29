@@ -52,8 +52,8 @@ bool LobbiesPopup::setup()
   lobbies_menu->setPosition(
       { background->getPositionX() + (bg_width / 2), 0.82f * height });
   lobbies_menu->setContentWidth(0.95f * bg_width);
-  lobbies_menu->setLayout(RowLayout::create()
-                              ->setAxisAlignment(AxisAlignment::Start)
+  lobbies_menu->setLayout(geode::RowLayout::create()
+                              ->setAxisAlignment(geode::AxisAlignment::Start)
                               ->setGap(10)
                               ->setAutoScale(true)
                               ->setDefaultScaleLimits(0.5f, 0.8f));
@@ -65,9 +65,9 @@ bool LobbiesPopup::setup()
 
   lobbies_list = geode::ScrollLayer::create(background->getContentSize());
   lobbies_list->m_contentLayer->setLayout(
-      ColumnLayout::create()
+      geode::ColumnLayout::create()
           ->setAxisReverse(true)
-          ->setAxisAlignment(AxisAlignment::End)
+          ->setAxisAlignment(geode::AxisAlignment::End)
           ->setAutoGrowAxis(bg_height)
           ->setGap(0));
   lobbies_list->setAnchorPoint({});

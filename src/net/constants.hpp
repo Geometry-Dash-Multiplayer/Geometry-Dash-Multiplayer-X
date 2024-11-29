@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <chrono>
 #include <variant>
+#include <vector>
 
 class GDMXPlayer;
 class SyncData;
@@ -52,7 +53,8 @@ enum class EventType : uint32_t
 {
   PlayerEnteredLevel,
   PlayerExitedLevel,
-  PlayerSync
+  PlayerSync,
+  LevelPlayersList
 };
 
 inline const char* to_string(EventType type)
@@ -62,6 +64,7 @@ inline const char* to_string(EventType type)
   case EventType::PlayerEnteredLevel: return "Player Entered Level";
   case EventType::PlayerExitedLevel: return "Player Exited Level";
   case EventType::PlayerSync: return "Player Sync";
+  case EventType::LevelPlayersList: return "Level Players List";
   default: return "Unknown";
   }
 }
@@ -71,8 +74,9 @@ inline auto format_as(EventType type) { return to_string(type); }
 using PlayerEnteredLevelValue = std::pair<GDMXPlayer, uint32_t>;
 using PlayerExitedLevelValue  = std::pair<uint64_t, uint32_t>;
 using PlayerSyncValue         = std::pair<uint64_t, SyncData>;
+using LevelPlayersListValue   = std::vector<GDMXPlayer>;
 using EventValue = std::variant<PlayerEnteredLevelValue, PlayerExitedLevelValue,
-                                PlayerSyncValue>;
+                                PlayerSyncValue, LevelPlayersListValue>;
 
 inline constexpr size_t lookup_socket_port = 55989;
 inline constexpr size_t main_socket_port   = 55898;
